@@ -1,0 +1,63 @@
+name: Idea Wall
+
+# Mirrors the in-world flow on GitHub:
+#   comment "I'll build this"  → label "claimed", remove "up for grabs", assign you
+#   comment "I'm out"           → unassign you; back to "up for grabs" if nobody is left
+#   a merged PR that "closes #N" → the issue closes; this job labels it "built"
+on:
+  issue_comment:
+    types: [created]
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  claim:
+    if: github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'idea')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = (context.payload.comment.body || "").toLowerCase();
+            const user = context.payload.comment.user.login;
+            const issue = context.payload.issue;
+            const base = { owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number };
+
+            const claiming = /\bi(?:'|’)?ll build (?:this|it)\b/.test(body) || /\bjoin(?:ing)? the build(?:ers)?\b/.test(body);
+            const leaving = /\bi(?:'|’)?m out\b/.test(body) || /\bleav(?:e|ing) the build\b/.test(body);
+
+            if (claiming) {
+              await github.rest.issues.addAssignees({ ...base, assignees: [user] });
+              await github.rest.issues.addLabels({ ...base, labels: ["claimed"] });
+              try { await github.rest.issues.removeLabel({ ...base, name: "up for grabs" }); } catch {}
+              await github.rest.issues.createComment({
+                ...base,
+                body: `@${user} is building this. Others can join by commenting "I'll build this" too. ` +
+                      `When it ships, open a PR with "closes #${issue.number}" in the description.`,
+              });
+            } else if (leaving) {
+              try { await github.rest.issues.removeAssignees({ ...base, assignees: [user] }); } catch {}
+              const fresh = await github.rest.issues.get(base);
+              if ((fresh.data.assignees || []).length === 0) {
+                try { await github.rest.issues.removeLabel({ ...base, name: "claimed" }); } catch {}
+                await github.rest.issues.addLabels({ ...base, labels: ["up for grabs"] });
+              }
+            }
+
+  built:
+    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'idea')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const base = { owner: context.repo.owner, repo: context.repo.repo, issue_number: context.payload.issue.number };
+            if (context.payload.issue.state_reason === "completed") {
+              await github.rest.issues.addLabels({ ...base, labels: ["built"] });
+              for (const name of ["claimed", "up for grabs"]) {
+                try { await github.rest.issues.removeLabel({ ...base, name }); } catch {}
+              }
+            }

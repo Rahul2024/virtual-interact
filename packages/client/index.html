@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="color-scheme" content="dark" />
+    <title>Virtual Interact</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="world"></div>
+    <div id="labels"></div>
+
+    <div id="hud" hidden>
+      <div class="hud-top">
+        <div class="hud-title">Virtual Interact <span class="hud-zone">· Hub</span></div>
+        <div class="hud-count"><span id="count">1</span> here</div>
+      </div>
+      <div class="hud-right">
+        <button id="mic" type="button" class="hud-button mic" data-status="off">
+          <span class="mic-dot"></span><span id="mic-label">Turn on mic</span>
+        </button>
+        <button id="ideas-open" type="button" class="hud-button">Idea Wall</button>
+      </div>
+      <div id="mic-note" class="mic-note" hidden></div>
+      <div class="hud-hint">WASD move · Shift run · drag to look · scroll to zoom · Enter to chat · M mic · E at the Idea Wall</div>
+      <div class="chat">
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form" class="chat-form" autocomplete="off">
+          <input id="chat-input" type="text" maxlength="240" placeholder="Press Enter to say something" />
+        </form>
+      </div>
+    </div>
+
+    <div id="ideas" class="ideas" hidden>
+      <div class="ideas-card" role="dialog" aria-labelledby="ideas-heading">
+        <header class="ideas-head">
+          <div>
+            <h2 id="ideas-heading">Idea Wall</h2>
+            <p>What should this place have? Post it, vote for it, or say "I'll build this".</p>
+          </div>
+          <button id="ideas-close" type="button" class="ideas-x" aria-label="Close">×</button>
+        </header>
+        <form id="ideas-form" class="ideas-form" autocomplete="off">
+          <input id="ideas-title" type="text" maxlength="80" placeholder="One line: what do you want here?" required />
+          <textarea id="ideas-details" maxlength="500" rows="2" placeholder="Why, and how it could work (optional)"></textarea>
+          <div class="ideas-form-row">
+            <span id="ideas-form-status" class="ideas-status"></span>
+            <button type="submit">Post idea</button>
+          </div>
+        </form>
+        <nav id="ideas-tabs" class="ideas-tabs" aria-label="Filter">
+          <button type="button" data-tab="open" class="active">Open <span id="ideas-n-open"></span></button>
+          <button type="button" data-tab="building">Being built <span id="ideas-n-building"></span></button>
+          <button type="button" data-tab="built">Built <span id="ideas-n-built"></span></button>
+        </nav>
+        <div id="ideas-list" class="ideas-list"></div>
+      </div>
+    </div>
+
+    <div id="join" class="join">
+      <form id="join-form" class="join-card" autocomplete="off">
+        <h1>Virtual Interact</h1>
+        <p class="join-sub">A city in the browser. Walk around, find people, talk.</p>
+        <label class="join-label" for="join-name">Your name</label>
+        <input id="join-name" type="text" maxlength="20" placeholder="Guest" />
+        <div class="join-label">Your colour</div>
+        <div id="join-colors" class="swatches"></div>
+        <button id="join-button" type="submit">Enter the hub</button>
+        <p id="join-status" class="join-status"></p>
+        <p class="join-foot">Open source · <a id="source-link" href="#" target="_blank" rel="noopener">source code</a> · built by the people in it</p>
+      </form>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

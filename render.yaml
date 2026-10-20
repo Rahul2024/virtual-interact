@@ -1,0 +1,34 @@
+# Render Blueprint: deploys the whole city on free instances.
+# Dashboard → New → Blueprint → pick this repo. See docs/DEPLOY.md.
+services:
+  # The world server: Colyseus rooms, chat, voice signaling, the Idea Wall.
+  - type: web
+    name: virtual-interact-server
+    runtime: node
+    plan: free
+    region: singapore # closest to India; change to oregon / frankfurt / etc. if your people are elsewhere
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # To keep the Idea Wall between restarts, add these two in the dashboard
+      # (Environment tab) after creating a free Upstash Redis database:
+      #   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+
+  # The client: static files on Render's CDN, with HTTPS (so the mic works).
+  - type: web
+    name: virtual-interact
+    runtime: static
+    buildCommand: npm ci && npm run build -w packages/client
+    staticPublishPath: packages/client/dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Tells the client where the server is, without you copying a URL by hand.
+      - key: VITE_SERVER_HOST
+        fromService:
+          name: virtual-interact-server
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME

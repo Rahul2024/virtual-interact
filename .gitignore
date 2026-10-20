@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+.vite/
+coverage/
+# Idea Wall data on a dev machine
+packages/world-server/data/

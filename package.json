@@ -1,0 +1,28 @@
+{
+  "name": "virtual-interact",
+  "private": true,
+  "version": "0.1.0",
+  "description": "An open-source 3D social city in the browser: walk, talk, hang out, build.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OWNER/virtual-interact"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"npm:dev -w packages/world-server\" \"npm:dev -w packages/client\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "start": "npm run start -w packages/world-server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "~5.9.3"
+  }
+}

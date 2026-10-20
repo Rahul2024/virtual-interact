@@ -1,0 +1,43 @@
+name: Idea
+description: Something you want this place to have. Anyone can post one, anyone can build it.
+title: "Idea: "
+labels: ["idea", "up for grabs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for adding to the city. Keep it short; the discussion happens below.
+        When you (or anyone) want to build it, comment **"I'll build this"** and the issue is marked claimed.
+  - type: input
+    id: what
+    attributes:
+      label: What do you want here?
+      placeholder: A cinema hall where you only hear your seat partner
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why, and how could it work?
+      placeholder: Watching with a partner is the point; other people's chatter breaks it. Seats in pairs, a "talk?" request to the next pair.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of thing is it?
+      options:
+        - A place (room, hall, district)
+        - An activity or game
+        - An event type
+        - A way of moving or interacting
+        - Avatars and looks
+        - Safety and moderation
+        - Something else
+  - type: dropdown
+    id: size
+    attributes:
+      label: Rough size
+      options:
+        - Small (an evening)
+        - Medium (a week of evenings)
+        - Large (needs a team)
+        - No idea

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Talk about an idea first
+    url: https://github.com/OWNER/virtual-interact/discussions
+    about: Not sure yet? Start a discussion, turn it into an Idea issue when it takes shape.
