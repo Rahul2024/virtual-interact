@@ -11,24 +11,242 @@
     <div id="world"></div>
     <div id="labels"></div>
 
+    <!-- Persistent Embed Host: only active when inside the Cinema Hall -->
+    <div id="cinema-embed-host" class="cinema-embed-host" hidden>
+      <iframe
+        id="cinema-yt-iframe"
+        title="Cinema Embed Player"
+        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+        allowfullscreen
+      ></iframe>
+      <div id="cinema-embed-shield" class="cinema-embed-shield" title="Synced by Cinema Host">
+        <button id="cinema-embed-unmute" type="button" class="embed-unmute-btn" hidden>
+          🔊 Click to Unmute
+        </button>
+      </div>
+    </div>
+
     <div id="hud" hidden>
       <div class="hud-top">
         <div class="hud-title">Virtual Interact <span class="hud-zone">· Hub</span></div>
         <div class="hud-count"><span id="count">1</span> here</div>
       </div>
+
       <div class="hud-right">
+        <button id="time-mode-btn" type="button" class="hud-button" title="Switch IST Auto / Night / Sunset / Day">
+          🇮🇳 IST
+        </button>
         <button id="mic" type="button" class="hud-button mic" data-status="off">
           <span class="mic-dot"></span><span id="mic-label">Turn on mic</span>
         </button>
+        <button id="friends-open" type="button" class="hud-button">
+          Friends <span id="friends-badge" class="pill-badge">0</span>
+        </button>
         <button id="ideas-open" type="button" class="hud-button">Idea Wall</button>
       </div>
+
+      <!-- Incoming Friend Request Toast -->
+      <div id="friend-toast" class="friend-toast" hidden>
+        <span id="friend-toast-text">Someone sent you a Friend Request!</span>
+        <div class="friend-toast-actions">
+          <button id="friend-toast-accept" type="button">Accept</button>
+          <button id="friend-toast-dismiss" type="button" class="secondary">Later</button>
+        </div>
+      </div>
+
       <div id="mic-note" class="mic-note" hidden></div>
-      <div class="hud-hint">WASD move · Shift run · drag to look · scroll to zoom · Enter to chat · M mic · E at the Idea Wall</div>
+
+      <!-- Minimal Context Action Bar (only appears when inside Mural, Football, Arcade, or Campfire/Forest) -->
+      <div id="activity-bar" class="activity-bar" hidden>
+        <div id="activity-actions" class="activity-actions"></div>
+      </div>
+
+      <!-- Simple, Minimal Cinema Hall Bar (only appears when inside the Cinema Hall) -->
+      <div id="cinema-dock" class="cinema-dock" hidden>
+        <div class="cinema-dock-row">
+          <span id="cinema-dock-host-badge" class="cinema-host-badge">👑 Host</span>
+          <form id="cinema-url-form" class="cinema-url-form" autocomplete="off">
+            <input
+              id="cinema-url-input"
+              type="url"
+              placeholder="Paste YouTube or video link…"
+              required
+            />
+            <button id="cinema-url-submit" type="submit" class="dock-btn accent">Play</button>
+          </form>
+          <button id="cinema-dock-playpause" type="button" class="timeline-btn" title="Play/Pause">⏸</button>
+          <button id="cinema-dock-back" type="button" class="timeline-btn" title="Rewind 15s">-15s</button>
+          <input
+            id="cinema-dock-scrub"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="0"
+            class="cinema-scrub-slider"
+            title="Host Timeline Scrubber (matches exact video length)"
+          />
+          <button id="cinema-dock-fwd" type="button" class="timeline-btn" title="Forward 15s">+15s</button>
+          <span id="cinema-dock-time" class="cinema-dock-time">00:00 / 00:00</span>
+          <select id="cinema-dock-quality" class="cinema-quality-select" title="Video Quality">
+            <option value="auto">⚙️ Auto</option>
+            <option value="hd1080">1080p HD</option>
+            <option value="hd720">720p HD</option>
+            <option value="large">480p</option>
+            <option value="medium">360p</option>
+            <option value="small">240p</option>
+          </select>
+          <button id="cinema-sit-btn" type="button" class="dock-btn primary">🪑 Sit (E)</button>
+          <button id="cinema-sit-friends-btn" type="button" class="dock-btn">Sit w/ Friends (G)</button>
+          <button id="cinema-expand-btn" type="button" class="dock-btn accent">⛶ Expand (F)</button>
+          <button id="cinema-bubbles-btn" type="button" class="dock-btn">💬 Bubbles: On</button>
+        </div>
+      </div>
+
+      <div class="hud-hint">
+        WASD move · Shift run · Enter chat · M mic · E interact / sit · F expand screen
+      </div>
+
       <div class="chat">
         <div id="chat-log" class="chat-log"></div>
         <form id="chat-form" class="chat-form" autocomplete="off">
           <input id="chat-input" type="text" maxlength="240" placeholder="Press Enter to say something" />
         </form>
+      </div>
+    </div>
+
+    <!-- Expanded Fullscreen Cinema Overlay -->
+    <div id="cinema-overlay" class="cinema-overlay" hidden>
+      <header class="cinema-overlay-top">
+        <div class="cinema-overlay-meta">
+          <span id="cinema-overlay-host-badge" class="cinema-host-badge">👑 Host</span>
+          <button id="cinema-overlay-playpause" type="button" class="timeline-btn">⏸</button>
+          <button id="cinema-overlay-back" type="button" class="timeline-btn" title="Rewind 15s">-15s</button>
+          <input
+            id="cinema-overlay-scrub"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="0"
+            class="cinema-scrub-slider"
+          />
+          <button id="cinema-overlay-fwd" type="button" class="timeline-btn" title="Forward 15s">+15s</button>
+          <span id="cinema-overlay-time" class="cinema-dock-time">00:00 / 00:00</span>
+        </div>
+        <div class="cinema-overlay-controls">
+          <select id="cinema-overlay-quality" class="cinema-quality-select" title="Video Quality">
+            <option value="auto">⚙️ Quality: Auto</option>
+            <option value="hd1080">⚙️ 1080p HD</option>
+            <option value="hd720">⚙️ 720p HD</option>
+            <option value="large">⚙️ 480p</option>
+            <option value="medium">⚙️ 360p</option>
+            <option value="small">⚙️ 240p</option>
+          </select>
+          <button id="cinema-player-gear-btn" type="button" class="dock-btn" title="Toggle native player settings gear">
+            ⚙️ Player Controls
+          </button>
+          <label class="cinema-vol-label">
+            🔊 <input id="cinema-volume" type="range" min="0" max="1" step="0.05" value="0.8" />
+          </label>
+          <button id="cinema-minimize-btn" type="button" class="dock-btn accent">
+            ↙ Minimize (Esc / F)
+          </button>
+        </div>
+      </header>
+
+      <div id="cinema-overlay-stage" class="cinema-overlay-stage">
+        <canvas id="cinema-overlay-canvas"></canvas>
+        <div id="cinema-overlay-embed-slot" class="cinema-overlay-embed-slot" hidden></div>
+      </div>
+
+      <div class="cinema-overlay-bottom">
+        <div class="cinema-overlay-chat">
+          <div id="cinema-overlay-chat-log" class="cinema-overlay-chat-log"></div>
+          <form id="cinema-overlay-chat-form" class="cinema-overlay-chat-form" autocomplete="off">
+            <input
+              id="cinema-overlay-chat-input"
+              type="text"
+              maxlength="240"
+              placeholder="Type a comment to the hall…"
+            />
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared Pixel Graffiti Mural Painter Modal -->
+    <div id="mural-modal" class="ideas" hidden>
+      <div class="ideas-card" role="dialog" aria-labelledby="mural-heading">
+        <header class="ideas-head">
+          <div>
+            <h2 id="mural-heading">Pixel Graffiti Mural</h2>
+            <p>Click or drag across the canvas to paint live on the 3D wall.</p>
+          </div>
+          <button id="mural-close" type="button" class="ideas-x" aria-label="Close">×</button>
+        </header>
+        <div class="mural-editor-body">
+          <div id="mural-palette" class="swatches"></div>
+          <canvas id="mural-editor-canvas" width="512" height="256" class="mural-editor-canvas"></canvas>
+          <div class="ideas-form-row">
+            <span class="ideas-status">32 × 16 Shared Pixel Grid</span>
+            <button id="mural-clear-btn" type="button" class="dock-btn">Clear Wall</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- East Multiplayer Arcade Modal -->
+    <div id="arcade-modal" class="ideas" hidden>
+      <div class="ideas-card" role="dialog" aria-labelledby="arcade-heading">
+        <header class="ideas-head">
+          <div>
+            <h2 id="arcade-heading">Multiplayer Arcade</h2>
+            <p>Play synchronized games with people in the Arcade.</p>
+          </div>
+          <button id="arcade-close" type="button" class="ideas-x" aria-label="Close">×</button>
+        </header>
+        <nav id="arcade-tabs" class="ideas-tabs" aria-label="Arcade Games">
+          <button type="button" data-game="c4" class="active">Connect 4</button>
+          <button type="button" data-game="ttt">Tic-Tac-Toe</button>
+          <button type="button" data-game="trivia">Trivia</button>
+        </nav>
+        <div class="arcade-body">
+          <div id="arcade-c4"></div>
+          <div id="arcade-ttt" hidden></div>
+          <div id="arcade-trivia" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Friends Modal -->
+    <div id="friends-modal" class="ideas" hidden>
+      <div class="ideas-card friends-modal-card" role="dialog" aria-labelledby="friends-heading">
+        <header class="ideas-head">
+          <div>
+            <h2 id="friends-heading">Friends</h2>
+            <p>
+              In the <strong>Fountain</strong> and <strong>Campfire</strong> circles, you can talk to anyone. Everywhere
+              else (including the <strong>Cinema Hall</strong>), you only hear accepted Friends.
+            </p>
+          </div>
+          <button id="friends-close" type="button" class="ideas-x" aria-label="Close">×</button>
+        </header>
+
+        <div class="friends-sections">
+          <section>
+            <h3>Friend Requests</h3>
+            <div id="incoming-list" class="friends-list"></div>
+          </section>
+          <section>
+            <h3>Your Friends</h3>
+            <div id="friends-list" class="friends-list"></div>
+          </section>
+          <section>
+            <h3>Players in Room</h3>
+            <div id="nearby-list" class="friends-list"></div>
+          </section>
+        </div>
       </div>
     </div>
 

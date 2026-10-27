@@ -1,9 +1,10 @@
 import * as THREE from "three";
+import { CINEMA_HALL } from "@vi/shared";
 
 /**
  * Keyboard movement plus a drag-to-orbit third-person camera.
- * Movement is expressed relative to where the camera looks, so "W" is always
- * "away from me" no matter how the camera is turned.
+ * Also supports Cinema Seated View: when seated in the auditorium, the camera
+ * frames both the big cinema screen ahead and the people sitting beside you.
  */
 export class Controls {
   private keys = new Set<string>();
@@ -17,6 +18,8 @@ export class Controls {
 
   /** When true (e.g. chat input focused) movement keys are ignored. */
   blocked = false;
+  /** True when the player is sitting in a Cinema Hall seat. */
+  seatedInCinema = false;
 
   constructor(private readonly canvas: HTMLElement) {
     window.addEventListener("keydown", (e) => {
@@ -40,7 +43,7 @@ export class Controls {
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       this.yaw -= dx * 0.005;
-      this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.005, -0.05, 1.25);
+      this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.005, -0.08, 1.25);
     });
     const stop = () => (this.dragging = false);
     canvas.addEventListener("pointerup", stop);
@@ -49,7 +52,7 @@ export class Controls {
       "wheel",
       (e) => {
         e.preventDefault();
-        this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * 0.01, 3, 14);
+        this.distance = THREE.MathUtils.clamp(this.distance + e.deltaY * 0.01, 2.5, 14);
       },
       { passive: false },
     );
@@ -69,18 +72,47 @@ export class Controls {
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) s -= 1;
     if (f === 0 && s === 0) return out.set(0, 0);
 
-    // Camera forward on the ground plane.
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
-    // Right-hand side.
     const rx = -fz;
     const rz = fx;
     out.set(fx * f + rx * s, fz * f + rz * s);
     return out.normalize();
   }
 
-  /** Places the camera behind and above the target, never below the ground. */
+  /**Snap camera smoothly when sitting down in a cinema seat. */
+  enterCinemaSeatView() {
+    this.seatedInCinema = true;
+    this.yaw = 0; // Camera placed +Z behind seated avatar, looking -Z at the screen
+    this.pitch = 0.08;
+    this.distance = 4.2;
+  }
+
+  exitCinemaSeatView() {
+    if (!this.seatedInCinema) return;
+    this.seatedInCinema = false;
+    this.pitch = 0.32;
+    this.distance = 7;
+  }
+
+  /** Places the camera behind and above the target, or in auditorium view when seated. */
   updateCamera(camera: THREE.PerspectiveCamera, target: THREE.Vector3) {
+    if (this.seatedInCinema) {
+      // Allow looking around at neighbors to your left/right while keeping the screen in view
+      const cp = Math.cos(this.pitch);
+      const x = target.x + Math.sin(this.yaw) * cp * this.distance;
+      const z = target.z + Math.cos(this.yaw) * cp * this.distance;
+      const y = Math.max(1.2, target.y + 0.35 + Math.sin(this.pitch) * this.distance);
+      camera.position.set(x, y, z);
+
+      // Blend lookAt between the player's row and the big cinema screen
+      const lookX = target.x * 0.65 - Math.sin(this.yaw) * 6;
+      const lookY = THREE.MathUtils.lerp(CINEMA_HALL.screenY * 0.72, 1.5, Math.max(0, this.pitch));
+      const lookZ = CINEMA_HALL.screenZ * 0.6 + target.z * 0.4;
+      camera.lookAt(lookX, lookY, lookZ);
+      return;
+    }
+
     const cp = Math.cos(this.pitch);
     const x = target.x + Math.sin(this.yaw) * cp * this.distance;
     const z = target.z + Math.cos(this.yaw) * cp * this.distance;

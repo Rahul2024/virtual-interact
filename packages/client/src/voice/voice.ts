@@ -2,15 +2,12 @@ import { MSG, VOICE, type MicMessage } from "@vi/shared";
 import type { HubRoom } from "../net/connection";
 
 /**
- * Proximity voice, peer-to-peer.
- *
- * Every browser in the hub that turns its mic on joins a mesh: the world
- * server only relays the WebRTC handshake (offer/answer/ICE); audio goes
- * straight between browsers. You are connected to the people within
- * `connectRadius` metres, hear the ones within `farRadius`, at full volume
- * inside `nearRadius`, panned left/right by where they stand relative to the
- * camera. This is right for a handful of people; a crowd needs an SFU
- * (LiveKit), which slots in behind the same class later.
+ * Proximity voice with Smart Social Privacy Gate:
+ * - Inside the Open Social Zone (Central Fountain): open proximity voice with
+ *   anyone nearby so you can meet new people and send Friend Requests.
+ * - Outside the Open Social Zone (including inside the Cinema Hall): you only
+ *   hear and speak to players who have accepted your Friend Request. Strangers
+ *   are 100% voice-muted so there is zero noise chaos during movies.
  */
 
 export type VoiceStatus = "off" | "requesting" | "on" | "muted" | "denied" | "no-mic" | "unsupported" | "error";
@@ -20,11 +17,15 @@ export interface Locator {
   /** Camera yaw in radians, used to pan voices left/right. */
   listenerYaw(): number;
   peerPosition(id: string): { x: number; z: number } | undefined;
+  /**
+   * Returns true if voice is allowed with this peer (either both in the Open
+   * Social Zone, or the peer is an accepted Friend).
+   */
+  canHearPeer(id: string): boolean;
 }
 
 interface Peer {
   pc: RTCPeerConnection;
-  /** True if we created the offer. Only the initiator drops peers for distance. */
   initiator: boolean;
   stream?: MediaStream;
   el?: HTMLAudioElement;
@@ -38,7 +39,6 @@ interface Peer {
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
 
-/** RTCSessionDescription keeps its fields on the prototype; the wire wants a plain object. */
 function plain(desc: RTCSessionDescription | null): RTCSessionDescriptionInit {
   return { type: desc?.type ?? "offer", sdp: desc?.sdp ?? "" };
 }
@@ -86,14 +86,23 @@ export class Voice {
     return this.status === "on" || this.status === "muted";
   }
 
-  /** How many people are close enough to hear you right now. */
+  /** How many audible people (allowed by zone/friend rules) are within range right now. */
   get listeners(): number {
     let n = 0;
     for (const id of this.peers.keys()) {
+      if (!this.locator.canHearPeer(id)) continue;
       const d = this.distanceTo(id);
       if (d !== undefined && d < VOICE.farRadius) n++;
     }
     return n;
+  }
+
+  /** True if any connected friend/peer is currently speaking audibly (used for movie audio ducking). */
+  get isAnyPeerSpeaking(): boolean {
+    for (const peer of this.peers.values()) {
+      if (peer.speaking) return true;
+    }
+    return false;
   }
 
   /** Ask for the microphone and join the mesh. Call from a click. */
@@ -120,12 +129,11 @@ export class Voice {
     const src = this.ctx.createMediaStreamSource(this.local);
     this.localAnalyser = this.ctx.createAnalyser();
     this.localAnalyser.fftSize = 1024;
-    src.connect(this.localAnalyser); // analyser only; we never play our own mic
+    src.connect(this.localAnalyser);
 
     this.setStatus("on");
     this.room.send(MSG.mic, { on: true } satisfies MicMessage);
     this.room.send("webrtc:join");
-    // Peers already connected to us (they offered before we had a mic) get our track now.
     for (const peer of this.peers.values()) this.attachLocal(peer.pc);
   }
 
@@ -144,7 +152,6 @@ export class Voice {
     this.setMuted(this.status !== "muted");
   }
 
-  /** Call every frame: volumes and panning follow positions; peers are reviewed every VOICE.reviewMs. */
   update(now: number) {
     if (now - this.lastReview > VOICE.reviewMs) {
       this.lastReview = now;
@@ -171,7 +178,6 @@ export class Voice {
 
   // ---- Mesh management --------------------------------------------------------
 
-  /** Connect to members in range (if we are the initiator), drop the ones far away. */
   private review(immediate: boolean) {
     if (!this.isOn) return;
     for (const id of this.members) {
@@ -181,7 +187,7 @@ export class Voice {
       if (!peer) {
         if (initiator && d !== undefined && d < VOICE.connectRadius) void this.connect(id);
       } else if (peer.initiator && d !== undefined && d > VOICE.connectRadius * 1.3) {
-        this.drop(id); // walked away; the other side sees the connection close
+        this.drop(id);
       }
     }
     if (immediate) this.mix();
@@ -201,7 +207,6 @@ export class Voice {
     };
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "failed" || pc.connectionState === "closed" || pc.connectionState === "disconnected") {
-        // Let a brief "disconnected" recover on its own; anything worse is gone.
         if (pc.connectionState === "disconnected") {
           setTimeout(() => {
             if (pc.connectionState === "disconnected") this.drop(id);
@@ -233,7 +238,6 @@ export class Voice {
 
   private async onOffer(id: string, sdp: RTCSessionDescriptionInit) {
     if (!this.isOn) return;
-    // A fresh offer replaces whatever we had with this peer.
     if (this.peers.has(id)) this.drop(id);
     this.members.add(id);
     const peer = this.newPeer(id, false);
@@ -310,7 +314,6 @@ export class Voice {
   private attachRemote(peer: Peer, stream: MediaStream) {
     if (!this.ctx) return;
     peer.stream = stream;
-    // Chrome only feeds a remote track into Web Audio once an <audio> element plays it.
     const el = document.createElement("audio");
     el.srcObject = stream;
     el.muted = true;
@@ -332,7 +335,10 @@ export class Voice {
     peer.source.connect(peer.analyser);
   }
 
-  /** Volume by distance and pan by direction, for every connected peer. */
+  /**
+   * Volume by distance, pan by direction, and strictly gated by Open Social
+   * Zone vs. Friend-Only status.
+   */
   private mix() {
     if (!this.ctx) return;
     const me = this.locator.myPosition();
@@ -343,8 +349,9 @@ export class Voice {
     for (const [id, peer] of this.peers) {
       if (!peer.gain || !peer.pan) continue;
       const p = this.locator.peerPosition(id);
-      if (!p) {
-        peer.gain.gain.setTargetAtTime(0, t, 0.05);
+      const allowed = this.locator.canHearPeer(id);
+      if (!p || !allowed) {
+        peer.gain.gain.setTargetAtTime(0, t, 0.04);
         continue;
       }
       const dx = p.x - me.x;
@@ -352,7 +359,6 @@ export class Voice {
       const d = Math.hypot(dx, dz);
       const vol = d <= VOICE.nearRadius ? 1 : d >= VOICE.farRadius ? 0 : 1 - (d - VOICE.nearRadius) / (VOICE.farRadius - VOICE.nearRadius);
       peer.gain.gain.setTargetAtTime(vol, t, 0.05);
-      // Right-hand side of the listener is (-fz, fx); pan is the dot with that.
       const pan = d > 0.5 ? (dx * -fz + dz * fx) / d : 0;
       peer.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
     }

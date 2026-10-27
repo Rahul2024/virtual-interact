@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/OWNER/virtual-interact"
+    "url": "https://github.com/Rahul2024/virtual-interact"
   },
   "workspaces": [
     "packages/*"

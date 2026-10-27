@@ -9,7 +9,7 @@ export type HubCallbacks = ReturnType<typeof Callbacks.get<HubState>>;
  * Where the world server is. In order:
  *   VITE_SERVER_URL   a full URL, e.g. wss://world.example.com or ws://10.0.0.5:2567
  *   VITE_SERVER_HOST  just a hostname (what a hosting blueprint hands us); wss:// is assumed
- *   otherwise         ws://<this page's host>:2567, the local dev setup
+ *   otherwise         proxied through the same host at /colyseus so a single tunnel link works globally
  */
 export function serverUrl(): string {
   const url = (import.meta.env.VITE_SERVER_URL as string | undefined)?.trim();
@@ -17,7 +17,7 @@ export function serverUrl(): string {
   const host = (import.meta.env.VITE_SERVER_HOST as string | undefined)?.trim();
   if (host) return host.includes("://") ? host : `wss://${host}`;
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${location.hostname}:2567`;
+  return `${proto}://${location.host}/colyseus`;
 }
 
 /** The http(s) twin of the ws(s) URL, for /health. */
