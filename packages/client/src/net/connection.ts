@@ -16,6 +16,9 @@ export function serverUrl(): string {
   if (url) return url.includes("://") ? url : `wss://${url}`;
   const host = (import.meta.env.VITE_SERVER_HOST as string | undefined)?.trim();
   if (host) return host.includes("://") ? host : `wss://${host}`;
+  if (location.hostname.endsWith(".onrender.com")) {
+    return "wss://virtual-interact-server.onrender.com";
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}/colyseus`;
 }
