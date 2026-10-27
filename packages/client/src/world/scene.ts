@@ -256,6 +256,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       screenLight.color.set(accentColor);
     },
     setFootballState(ballX: number, ballZ: number, scoreRed: number, scoreBlue: number) {
+      if (!Number.isFinite(ballX) || !Number.isFinite(ballZ)) return;
       ballMesh.position.x += (ballX - ballMesh.position.x) * 0.35;
       ballMesh.position.z += (ballZ - ballMesh.position.z) * 0.35;
       ballMesh.rotation.x += 0.08;

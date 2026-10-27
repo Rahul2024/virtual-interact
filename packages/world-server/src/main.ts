@@ -1,5 +1,6 @@
 import { createWorldServer } from "./server.js";
 import { ideas, ideasReady } from "./ideas/index.js";
+import { emitWarning } from "node:process";
 
 const port = Number(process.env.PORT ?? 2567);
 

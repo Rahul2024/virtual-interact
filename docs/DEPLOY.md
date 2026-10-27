@@ -21,7 +21,7 @@ itself every time you save and push code.
      "command line developer tools" prompt. Accept it, wait for it to finish
      (5–10 minutes), then quit and reopen VS Code.
    - VS Code asks you to sign in to GitHub in the browser. Click **Authorize**.
-3. Choose **Publish to GitHub public repository** and keep the name
+3. Choose **Publish to GitHub public repository** and keep the namew
    `virtual-interact`. VS Code uploads everything except `node_modules`.
 4. On github.com, open the repo and do two one-time things:
    - **Settings → General → Features**: tick **Discussions**.

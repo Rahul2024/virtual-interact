@@ -198,10 +198,12 @@ function triggerEmote(s: Session, anim: Anim, emoji: string) {
 }
 
 function attackNearestAnimal(s: Session) {
+  const animals = s.room.state?.animals;
+  if (!animals || typeof animals.entries !== "function") return;
   let closestId = "";
   let closestDist = Infinity;
-  for (const [id, a] of s.room.state.animals.entries()) {
-    if (a.hp <= 0) continue;
+  for (const [id, a] of animals.entries()) {
+    if (!a || a.hp <= 0) continue;
     const d = Math.hypot(a.x - s.me.position.x, a.z - s.me.position.z);
     if (d < closestDist) {
       closestDist = d;
@@ -325,6 +327,10 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     const remotes = new Map<string, Remote>();
     const friends = new Set<string>();
     const me = new Avatar(options.name || "You", options.color, true);
+    me.position.set(0, 0, 8);
+    controls.distance = 7;
+    controls.pitch = 0.35;
+    controls.yaw = Math.PI;
     world.scene.add(me.group);
 
     const canHearPeer = (peerSessionId: string): boolean => {
@@ -415,22 +421,26 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     activities.onSitCampfire = () => toggleNearestSeat(s, true);
 
     const syncCinemaFromRoom = () => {
-      const hostId = room.state.cinemaHostId || "";
+      const st = room.state;
+      if (!st) return;
+      const hostId = st.cinemaHostId || "";
       const isHost = hostId === room.sessionId || hostId === "";
-      const hostName = isHost ? "You" : room.state.cinemaHostName || "Host";
+      const hostName = isHost ? "You" : st.cinemaHostName || "Host";
       cinema.syncState({
-        movieUrl: room.state.movieUrl || "",
-        movieDurationSec: room.state.movieDurationSec || 0,
-        startedAt: room.state.movieStartedAt || 0,
-        paused: room.state.moviePaused === 1,
-        pausedAtSec: room.state.moviePausedAtSec || 0,
+        movieUrl: st.movieUrl || "",
+        movieDurationSec: st.movieDurationSec || 0,
+        startedAt: st.movieStartedAt || 0,
+        paused: st.moviePaused === 1,
+        pausedAtSec: st.moviePausedAtSec || 0,
         isHost,
         hostName,
       });
     };
 
-    callbacks.onChange(room.state, () => syncCinemaFromRoom());
-    syncCinemaFromRoom();
+    if (room.state) {
+      callbacks.onChange(room.state, () => syncCinemaFromRoom());
+      syncCinemaFromRoom();
+    }
 
     room.onMessage(CINEMA_MSG.syncSeek, (m: CinemaSyncSeekBroadcast) => {
       cinema.applyImmediateSyncSeek(m.seekSec, m.paused);
@@ -463,7 +473,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       hud.addSystem(`👋 ${req.fromName} sent you a Friend Request!`);
     });
 
-    const updateCount = () => hud.setCount(room.state.players.size);
+    const updateCount = () => hud.setCount(room.state?.players?.size ?? 1);
 
     callbacks.onAdd("players", (player, id) => {
       if (id === room.sessionId) {
@@ -561,7 +571,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       const rem = remotes.get(m.id);
       const isFriend = rem ? friends.has(rem.clientId) : false;
       const speaker = isMe ? me : rem?.avatar;
-      const color = isMe ? options.color : room.state.players.get(m.id)?.color;
+      const color = isMe ? options.color : room.state?.players?.get?.(m.id)?.color;
 
       const hideBubble = !isMe && !isFriend && cinema.hideStrangerBubbles;
       speaker?.say(m.text, 6000, hideBubble);
@@ -636,108 +646,119 @@ let last = performance.now();
 let lastMicLabel = 0;
 
 function frame(now: number) {
+  requestAnimationFrame(frame);
+
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
-  world.updateAtmosphere(now);
-  cinema.updateFrame(now);
+  try {
+    world.updateAtmosphere(now);
+    cinema.updateFrame(now);
 
-  if (session) {
-    stepLocal(session, dt, now);
-    stepRemotes(session, dt);
-    const isSeated = session.me.seatId >= 0;
-    const isCinemaSeated = session.me.seatId >= 0 && session.me.seatId < 24;
-    camTarget.set(session.me.position.x, isSeated ? 1.25 : 1.5, session.me.position.z);
-    controls.updateCamera(world.camera, camTarget);
-    maybeSend(session, dt);
-    ideaWall.setNear(ideaWall.isNear(session.me.position));
-    session.voice.update(now);
+    if (session) {
+      stepLocal(session, dt, now);
+      stepRemotes(session, dt);
+      const isSeated = session.me.seatId >= 0;
+      const isCinemaSeated = session.me.seatId >= 0 && session.me.seatId < 24;
+      camTarget.set(session.me.position.x, isSeated ? 1.25 : 1.5, session.me.position.z);
+      controls.updateCamera(world.camera, camTarget);
+      maybeSend(session, dt);
+      ideaWall.setNear(ideaWall.isNear(session.me.position));
+      session.voice.update(now);
 
-    world.setFootballState(
-      session.room.state.ballX,
-      session.room.state.ballZ,
-      session.room.state.scoreRed,
-      session.room.state.scoreBlue,
-    );
-    const animalsList: AnimalRenderState[] = [];
-    for (const a of session.room.state.animals.values()) {
-      animalsList.push({
-        id: a.id,
-        species: a.species,
-        x: a.x,
-        z: a.z,
-        rot: a.rot,
-        hp: a.hp,
-        maxHp: a.maxHp,
+      const st = session.room.state;
+      if (st && Number.isFinite(st.ballX) && Number.isFinite(st.ballZ)) {
+        world.setFootballState(
+          st.ballX,
+          st.ballZ,
+          st.scoreRed ?? 0,
+          st.scoreBlue ?? 0,
+        );
+      }
+      if (st?.animals && typeof st.animals.values === "function") {
+        const animalsList: AnimalRenderState[] = [];
+        for (const a of st.animals.values()) {
+          if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.z)) continue;
+          animalsList.push({
+            id: a.id,
+            species: a.species,
+            x: a.x,
+            z: a.z,
+            rot: a.rot ?? 0,
+            hp: a.hp ?? 1,
+            maxHp: a.maxHp ?? 1,
+          });
+        }
+        world.syncAnimals(animalsList);
+      }
+
+      const mx = session.me.position.x;
+      const mz = session.me.position.z;
+      const inCinema = isInCinemaHall(mx, mz) || isCinemaSeated;
+
+      const peerList: CinemaFriendPeer[] = [];
+      for (const [sid, r] of session.remotes.entries()) {
+        peerList.push({
+          sessionId: sid,
+          clientId: r.clientId,
+          name: roomPlayerName(session, sid),
+          color: r.color,
+          isFriend: session.friends.has(r.clientId),
+          inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < 24),
+          seatId: r.avatar.seatId,
+          speaking: r.speaking,
+          distance: Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz),
+        });
+      }
+
+      cinema.updateHudState({
+        playerX: mx,
+        playerZ: mz,
+        inCinema,
+        isSeated: isCinemaSeated,
+        friendSpeaking: session.voice.isAnyPeerSpeaking,
+        friendsCount: peerList.filter((p) => p.isFriend).length,
+        peers: peerList,
       });
-    }
-    world.syncAnimals(animalsList);
 
-    const mx = session.me.position.x;
-    const mz = session.me.position.z;
-    const inCinema = isInCinemaHall(mx, mz) || isCinemaSeated;
-
-    const peerList: CinemaFriendPeer[] = [];
-    for (const [sid, r] of session.remotes.entries()) {
-      peerList.push({
-        sessionId: sid,
-        clientId: r.clientId,
-        name: roomPlayerName(session, sid),
-        color: r.color,
-        isFriend: session.friends.has(r.clientId),
-        inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < 24),
-        seatId: r.avatar.seatId,
-        speaking: r.speaking,
-        distance: Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz),
+      activities.updateContextBar({
+        tool: session.me.tool,
+        team: session.me.team,
+        rawMeat: session.rawMeat,
+        cookedMeat: session.cookedMeat,
+        energy: session.energy,
+        isSeated,
+        onOpenMic: isOnOpenMicStage(mx, mz),
+        nearMural: isNearGraffitiMural(mx, mz),
+        inFootball: isInFootballStadium(mx, mz),
+        inArcade: isInArcadeZone(mx, mz),
+        inCampfire: isInCampfireCircle(mx, mz),
+        inForest: isInForestWilderness(mx, mz),
+        isNight: world.isNight,
       });
+
+      if (session.voice.status === "on" && now - lastMicLabel > 600) {
+        lastMicLabel = now;
+        activities.updateTimeButtonLabel();
+        hud.setMic("on", session.voice.listeners);
+      }
+    } else {
+      controls.yaw += dt * 0.08;
+      controls.pitch = 0.4;
+      controls.distance = 22;
+      camTarget.set(0, 2.5, 0);
+      controls.updateCamera(world.camera, camTarget);
     }
 
-    cinema.updateHudState({
-      playerX: mx,
-      playerZ: mz,
-      inCinema,
-      isSeated: isCinemaSeated,
-      friendSpeaking: session.voice.isAnyPeerSpeaking,
-      friendsCount: peerList.filter((p) => p.isFriend).length,
-      peers: peerList,
-    });
-
-    activities.updateContextBar({
-      tool: session.me.tool,
-      team: session.me.team,
-      rawMeat: session.rawMeat,
-      cookedMeat: session.cookedMeat,
-      energy: session.energy,
-      isSeated,
-      onOpenMic: isOnOpenMicStage(mx, mz),
-      nearMural: isNearGraffitiMural(mx, mz),
-      inFootball: isInFootballStadium(mx, mz),
-      inArcade: isInArcadeZone(mx, mz),
-      inCampfire: isInCampfireCircle(mx, mz),
-      inForest: isInForestWilderness(mx, mz),
-      isNight: world.isNight,
-    });
-
-    if (session.voice.status === "on" && now - lastMicLabel > 600) {
-      lastMicLabel = now;
-      activities.updateTimeButtonLabel();
-      hud.setMic("on", session.voice.listeners);
-    }
-  } else {
-    controls.yaw += dt * 0.08;
-    controls.pitch = 0.4;
-    controls.distance = 22;
-    camTarget.set(0, 2.5, 0);
-    controls.updateCamera(world.camera, camTarget);
+    world.render();
+    cinema.updateScreenProjection(world.camera, !session);
+  } catch (err) {
+    console.error("Render frame error:", err);
   }
-
-  world.render();
-  cinema.updateScreenProjection(world.camera, !session);
-  requestAnimationFrame(frame);
 }
 
 function roomPlayerName(s: Session, sid: string): string {
-  return s.room.state.players.get(sid)?.name ?? "Guest";
+  return s.room.state?.players?.get?.(sid)?.name ?? "Guest";
 }
 
 function stepLocal(s: Session, dt: number, now: number) {
