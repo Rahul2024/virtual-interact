@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   ANIM,
   ARCADE_MSG,
+  CAVE_DUNGEON,
   CINEMA_MSG,
   CINEMA_SEATS,
   FOOTBALL_MSG,
@@ -14,8 +15,10 @@ import {
   PLAYER,
   REPO_URL,
   TEAM,
+  isInAncientRuins,
   isInArcadeZone,
   isInCampfireCircle,
+  isInCaveDungeon,
   isInCinemaHall,
   isInFootballStadium,
   isInForestWilderness,
@@ -85,27 +88,39 @@ window.addEventListener("keydown", (e) => {
   if (controls.blocked) return;
 
   if (e.code === "KeyE") {
+    const px = session.me.position.x;
+    const pz = session.me.position.z;
     if (ideaWall.isNear(session.me.position)) {
       e.preventDefault();
       ideasPanel.open();
       return;
     }
-    if (isNearGraffitiMural(session.me.position.x, session.me.position.z)) {
+    if (isNearGraffitiMural(px, pz)) {
       e.preventDefault();
       activities.openMuralModal();
       return;
     }
-    if (isInArcadeZone(session.me.position.x, session.me.position.z)) {
+    if (isInArcadeZone(px, pz)) {
       e.preventDefault();
       activities.openArcadeModal();
       return;
     }
-    if (isInCampfireCircle(session.me.position.x, session.me.position.z) || session.me.seatId >= 24) {
+    if (isInAncientRuins(px, pz)) {
+      e.preventDefault();
+      session.room.send(FOREST_MSG.ruinsBlessing);
+      return;
+    }
+    if (isInCaveDungeon(px, pz)) {
+      e.preventDefault();
+      triggerNearestDungeonDecision(session, px, pz);
+      return;
+    }
+    if (isInCampfireCircle(px, pz) || session.me.seatId >= 24) {
       e.preventDefault();
       toggleNearestSeat(session, true);
       return;
     }
-    if (isInCinemaHall(session.me.position.x, session.me.position.z) || session.me.seatId >= 0) {
+    if (isInCinemaHall(px, pz) || session.me.seatId >= 0) {
       e.preventDefault();
       toggleNearestSeat(session, false);
       return;
@@ -145,6 +160,20 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Digit3") triggerEmote(session, ANIM.wave, "👋");
   if (e.code === "Digit4") triggerEmote(session, ANIM.mindblown, "🤯");
 });
+
+function triggerNearestDungeonDecision(s: Session, px: number, pz: number) {
+  const cx = CAVE_DUNGEON.centerX;
+  if (pz < 156) {
+    const choice: 1 | 2 = px <= cx ? 1 : 2;
+    s.room.send(FOREST_MSG.dungeonDecision, { stage: 1, choice });
+  } else if (pz < 185) {
+    const nextChoice: 1 | 2 = s.room.state?.dungeonChoice2 === 1 ? 2 : 1;
+    s.room.send(FOREST_MSG.dungeonDecision, { stage: 2, choice: nextChoice });
+  } else {
+    const choice: 1 | 2 | 3 = px < cx - 1.8 ? 1 : px > cx + 1.8 ? 3 : 2;
+    s.room.send(FOREST_MSG.dungeonDecision, { stage: 3, choice });
+  }
+}
 
 function toggleMic() {
   if (!session) return;
@@ -345,6 +374,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
 
       if (isInOpenSocialZone(mx, mz) && isInOpenSocialZone(px, pz)) return true;
       if (isInCampfireCircle(mx, mz) && isInCampfireCircle(px, pz)) return true;
+      if (isInCaveDungeon(mx, mz) && isInCaveDungeon(px, pz)) return true;
       if (isOnOpenMicStage(px, pz) && isNearOpenMicStage(mx, mz)) return true;
       if (isOnOpenMicStage(mx, mz) && isNearOpenMicStage(px, pz)) return true;
       if (me.team !== TEAM.none && me.team === remote.avatar.team && isInFootballStadium(mx, mz) && isInFootballStadium(px, pz)) {
@@ -419,6 +449,9 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     activities.onCookMeat = () => room.send(FOREST_MSG.cookMeat);
     activities.onEatMeat = () => room.send(FOREST_MSG.eatMeat);
     activities.onSitCampfire = () => toggleNearestSeat(s, true);
+    activities.onRuinsBlessing = () => room.send(FOREST_MSG.ruinsBlessing);
+    activities.onDungeonDecision = (stage, choice) =>
+      room.send(FOREST_MSG.dungeonDecision, { stage, choice });
 
     const syncCinemaFromRoom = () => {
       const st = room.state;
@@ -675,6 +708,17 @@ function frame(now: number) {
           st.scoreBlue ?? 0,
         );
       }
+      if (st) {
+        world.setDungeonState(
+          st.dungeonVariant ?? 0,
+          st.dungeonChoice1 ?? 1,
+          st.dungeonChoice2 ?? 1,
+          st.dungeonGateOpen ?? 0,
+          st.boulderZ ?? CAVE_DUNGEON.gauntletEndZ,
+          st.boulderLaneX ?? CAVE_DUNGEON.centerX,
+          Date.now(),
+        );
+      }
       if (st?.animals && typeof st.animals.values === "function") {
         const animalsList: AnimalRenderState[] = [];
         for (const a of st.animals.values()) {
@@ -734,6 +778,11 @@ function frame(now: number) {
         inArcade: isInArcadeZone(mx, mz),
         inCampfire: isInCampfireCircle(mx, mz),
         inForest: isInForestWilderness(mx, mz),
+        inRuins: isInAncientRuins(mx, mz),
+        inDungeon: isInCaveDungeon(mx, mz),
+        playerZ: mz,
+        dungeonChoice1: st?.dungeonChoice1 ?? 1,
+        dungeonChoice2: st?.dungeonChoice2 ?? 1,
         isNight: world.isNight,
       });
 

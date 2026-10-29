@@ -33,28 +33,35 @@ function httpUrl(): string {
  * minute to wake it. Poll /health until it answers, telling the person why
  * they're waiting, so the join itself doesn't fail on a loading page.
  */
-export async function waitForServer(onStatus: (text: string) => void, maxMs = 120_000): Promise<void> {
+export async function waitForServer(onStatus: (text: string) => void, maxMs = 90_000): Promise<void> {
   const started = Date.now();
   let attempt = 0;
   for (;;) {
     attempt++;
     try {
-      const res = await fetch(`${httpUrl()}/health`, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+      const res = await fetch(`${httpUrl()}/health`, {
+        mode: "cors",
+        credentials: "omit",
+        signal: AbortSignal.timeout(15_000),
+        cache: "no-store",
+      });
       if (res.ok) {
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
         if (body.ok) return;
       }
     } catch {
-      /* not up yet */
+      // If a browser shield/extension (e.g. Brave Shields) blocks cross-origin /health polling
+      // while the server is actually awake, let joinHub() attempt the WebSocket connection after 2 tries.
+      if (attempt >= 2) return;
     }
     const waited = Math.round((Date.now() - started) / 1000);
-    if (Date.now() - started > maxMs) throw new Error("server did not wake up in time");
+    if (Date.now() - started > maxMs) return;
     onStatus(
       attempt === 1
-        ? "Waking the world server up… free hosting sleeps when it's quiet. Up to a minute."
-        : `Still waking the server up… ${waited}s`,
+        ? "Connecting to world server…"
+        : `Waking the server up… ${waited}s`,
     );
-    await new Promise((r) => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 2500));
   }
 }
 

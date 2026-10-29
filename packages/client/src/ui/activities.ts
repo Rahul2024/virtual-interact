@@ -47,7 +47,7 @@ const TRIVIA_QUESTIONS: Array<{ q: string; options: [string, string, string, str
     answerIdx: 2,
   },
   {
-    q: "What tool lights up the dark forest at night in Virtual Interact?",
+    q: "What tool lights up the dark forest and cave dungeon at night in Virtual Interact?",
     options: ["Wooden Bow", "Night Torch", "Popcorn Tub", "Fishing Rod"],
     answerIdx: 1,
   },
@@ -108,6 +108,8 @@ export class ActivitiesController {
   onCookMeat: () => void = () => {};
   onEatMeat: () => void = () => {};
   onSitCampfire: () => void = () => {};
+  onRuinsBlessing: () => void = () => {};
+  onDungeonDecision: (stage: 1 | 2 | 3, choice: 1 | 2 | 3) => void = () => {};
   onOpenMuralChange: (open: boolean) => void = () => {};
 
   private currentMode: TimeMode = "ist";
@@ -350,8 +352,8 @@ export class ActivitiesController {
   }
 
   /**
-   * Only shows a compact context button bar when the player is actually inside
-   * one of the activity zones (Mural, Football, Arcade, or Campfire/Forest).
+   * Shows a compact context button bar when the player is inside one of the
+   * activity zones (Mural, Football, Arcade, Campfire/Forest, Ancient Ruins, or Shifting Cave Dungeon).
    */
   updateContextBar(opts: {
     tool: ToolId;
@@ -366,14 +368,28 @@ export class ActivitiesController {
     inArcade: boolean;
     inCampfire: boolean;
     inForest: boolean;
+    inRuins: boolean;
+    inDungeon: boolean;
+    playerZ: number;
+    dungeonChoice1: number;
+    dungeonChoice2: number;
     isNight: boolean;
   }) {
     const activeZone =
-      opts.nearMural || opts.onOpenMic || opts.inFootball || opts.inArcade || opts.inCampfire || opts.inForest;
+      opts.nearMural ||
+      opts.onOpenMic ||
+      opts.inFootball ||
+      opts.inArcade ||
+      opts.inCampfire ||
+      opts.inForest ||
+      opts.inRuins ||
+      opts.inDungeon;
     if (!activeZone) {
       this.activityBar.hidden = true;
       return;
     }
+
+    const dungeonSubStage = !opts.inDungeon ? 0 : opts.playerZ < 156 ? 1 : opts.playerZ < 185 ? 2 : 3;
 
     const key = [
       opts.tool,
@@ -387,6 +403,10 @@ export class ActivitiesController {
       opts.inArcade ? 1 : 0,
       opts.inCampfire ? 1 : 0,
       opts.inForest ? 1 : 0,
+      opts.inRuins ? 1 : 0,
+      dungeonSubStage,
+      opts.dungeonChoice1,
+      opts.dungeonChoice2,
     ].join(":");
 
     if (this.activityActionsEl.dataset.key === key) {
@@ -428,7 +448,42 @@ export class ActivitiesController {
       addBtn("🕹️ Play Arcade (E)", "accent", () => this.openArcadeModal());
     }
 
-    if (opts.inCampfire || opts.inForest) {
+    if (opts.inRuins) {
+      addBtn("🏛️ Sun Altar Blessing (E)", "accent", () => this.onRuinsBlessing());
+    }
+
+    if (opts.inDungeon) {
+      if (dungeonSubStage === 1) {
+        addBtn(
+          opts.dungeonChoice1 === 1 ? "🔥 Trial of Blades (Left) ✓" : "🔥 Choose Blades (Left)",
+          opts.dungeonChoice1 === 1 ? "accent" : "primary",
+          () => this.onDungeonDecision(1, 1),
+        );
+        addBtn(
+          opts.dungeonChoice1 === 2 ? "🐍 Trial of Shadows (Right) ✓" : "🐍 Choose Shadows (Right)",
+          opts.dungeonChoice1 === 2 ? "accent" : "primary",
+          () => this.onDungeonDecision(1, 2),
+        );
+      } else if (dungeonSubStage === 2) {
+        addBtn(
+          opts.dungeonChoice2 === 1 ? "⚡ Pendulum Rhythm ✓" : "⚡ Choose Pendulum Rhythm",
+          opts.dungeonChoice2 === 1 ? "accent" : "primary",
+          () => this.onDungeonDecision(2, 1),
+        );
+        addBtn(
+          opts.dungeonChoice2 === 2 ? "🪨 Boulder Surge ✓" : "🪨 Choose Boulder Surge",
+          opts.dungeonChoice2 === 2 ? "accent" : "primary",
+          () => this.onDungeonDecision(2, 2),
+        );
+      } else if (dungeonSubStage === 3) {
+        addBtn("🩸 Crimson Idol", "accent", () => this.onDungeonDecision(3, 1));
+        addBtn("🌿 Emerald Idol", "primary", () => this.onDungeonDecision(3, 2));
+        addBtn("☀️ Golden Idol", "accent", () => this.onDungeonDecision(3, 3));
+      }
+      addBtn(opts.tool === TOOL.torch ? "🔥 Torch ✓" : "🔥 Equip Torch", opts.tool === TOOL.torch ? "accent" : "", () =>
+        this.onEquipTool(opts.tool === TOOL.torch ? TOOL.none : TOOL.torch),
+      );
+    } else if (opts.inCampfire || opts.inForest) {
       if (opts.inCampfire) {
         addBtn(opts.isSeated ? "Stand Up (E)" : "Sit at Fire (E)", "primary", () => this.onSitCampfire());
         if (opts.rawMeat > 0) {
@@ -448,7 +503,7 @@ export class ActivitiesController {
         this.onEquipTool(opts.tool === TOOL.bow ? TOOL.none : TOOL.bow),
       );
       if (opts.inForest) {
-        addBtn("🏹 Hunt (Space)", "accent", () => this.onAttackNearestAnimal());
+        addBtn("🏹 Hunt / Fight Snake (Space)", "accent", () => this.onAttackNearestAnimal());
       }
     }
 

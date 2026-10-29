@@ -6,12 +6,12 @@
 export const REPO_URL = "https://github.com/Rahul2024/virtual-interact";
 
 /**
- * Expanded World: 320m × 320m (-160 to +160 on X and Z) to fit all city
- * districts plus the Deep Southern Forest Wilderness.
+ * Expanded World: 460m × 460m (-230 to +230 on X and Z) to fit all city
+ * districts plus the Deep Southern Forest, Ancient Ruins, and 90m Shifting Cave Dungeon.
  */
 export const WORLD = {
-  size: 320,
-  half: 160,
+  size: 460,
+  half: 230,
 } as const;
 
 export const PLAYER = {
@@ -27,7 +27,7 @@ export const PLAYER = {
 export const NET = {
   sendHz: 10,
   patchMs: 50,
-  maxMessagesPerSecond: 45,
+  maxMessagesPerSecond: 250,
 } as const;
 
 /** Animation states. Kept numeric so they fit in one byte on the wire. */
@@ -167,14 +167,17 @@ export function isInArcadeZone(x: number, z: number): boolean {
   return Math.hypot(x - ARCADE_ZONE.centerX, z - ARCADE_ZONE.centerZ) <= ARCADE_ZONE.radius;
 }
 
-/** South District: Campfire Basecamp & Deep Forest Wilderness. */
+/**
+ * South District: Deep Forest Campfire Valley (`z = +68`, hidden behind the
+ * Foothill Ridge at `z = +36..+56` so the city skyline is screened off).
+ */
 export const CAMPFIRE_BASE = {
   x: 0,
-  z: 44,
+  z: 68,
   fireRadius: 2.2,
-  voiceCircleRadius: 11,
-  cookPos: { x: -4.8, z: 44 },
-  toolRackPos: { x: 4.8, z: 44 },
+  voiceCircleRadius: 11.5,
+  cookPos: { x: -4.8, z: 68 },
+  toolRackPos: { x: 4.8, z: 68 },
 } as const;
 
 export function isInCampfireCircle(x: number, z: number): boolean {
@@ -182,7 +185,45 @@ export function isInCampfireCircle(x: number, z: number): boolean {
 }
 
 export function isInForestWilderness(x: number, z: number): boolean {
-  return z >= 34 && Math.abs(x) <= 150;
+  return z >= 38 && Math.abs(x) <= 210;
+}
+
+/** South-West Ancient Stepwell & Temple Monument Ruins (`x = -48, z = +138`). */
+export const ANCIENT_RUINS = {
+  x: -48,
+  z: 138,
+  radius: 18,
+} as const;
+
+export function isInAncientRuins(x: number, z: number): boolean {
+  return Math.hypot(x - ANCIENT_RUINS.x, z - ANCIENT_RUINS.z) <= ANCIENT_RUINS.radius;
+}
+
+/**
+ * South-East Mountain Range & 90m Shifting Booby-Trap Cave Dungeon
+ * (`x = +48, z = +118..+206`).
+ */
+export const CAVE_DUNGEON = {
+  centerX: 48,
+  startZ: 118,
+  endZ: 206,
+  halfW: 8.5,
+  decision1Z: 128,
+  labyrinthStartZ: 138,
+  labyrinthEndZ: 158,
+  decision2Z: 161,
+  gauntletStartZ: 164,
+  gauntletEndZ: 185,
+  sanctumZ: 196,
+  vaultZ: 203,
+} as const;
+
+export function isInCaveDungeon(x: number, z: number): boolean {
+  return (
+    Math.abs(x - CAVE_DUNGEON.centerX) <= CAVE_DUNGEON.halfW + 3 &&
+    z >= CAVE_DUNGEON.startZ - 4 &&
+    z <= CAVE_DUNGEON.endZ + 4
+  );
 }
 
 /** Proximity voice. Distances in metres; volumes 0..1. */
@@ -321,7 +362,7 @@ export interface ArcadeStateBroadcast {
   triviaScores: Record<string, number>;
 }
 
-// ---- South Campfire & Forest Hunting / Survival Messages ------------------
+// ---- South Campfire, Forest Hunting & Shifting Dungeon Messages ------------
 
 export const FOREST_MSG = {
   equipTool: "forest:tool",
@@ -329,6 +370,8 @@ export const FOREST_MSG = {
   forageBerry: "forest:berry",
   cookMeat: "forest:cook",
   eatMeat: "forest:eat",
+  ruinsBlessing: "forest:ruins-blessing",
+  dungeonDecision: "forest:dungeon-decision",
 } as const;
 
 export interface ForestEquipMessage {
@@ -339,7 +382,12 @@ export interface ForestAttackMessage {
   animalId: string;
 }
 
-export type AnimalSpecies = "rabbit" | "deer" | "boar" | "wolf";
+export interface DungeonDecisionMessage {
+  stage: 1 | 2 | 3;
+  choice: 1 | 2 | 3;
+}
+
+export type AnimalSpecies = "rabbit" | "deer" | "boar" | "wolf" | "snake";
 
 // ---- Friend System & Voice Privacy ----------------------------------------
 
@@ -403,7 +451,7 @@ export function isInCinemaHall(x: number, z: number): boolean {
 }
 
 /**
- * 24 Cinema Hall seats (0..23) + 10 Campfire Log seats (24..33).
+ * 24 Cinema Hall seats (0..23) + 10 Campfire Log seats (24..33) at z = +68.
  */
 export const CINEMA_SEATS: readonly CinemaSeat[] = (() => {
   const list: CinemaSeat[] = [];

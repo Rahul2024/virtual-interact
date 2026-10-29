@@ -63,8 +63,20 @@ export const HubState = schema(
     ballZ: t.float32().default(0),
     scoreRed: t.uint8().default(0),
     scoreBlue: t.uint8().default(0),
-    /** South Forest roaming wildlife. */
+    /** South Forest roaming wildlife (including slithering snakes). */
     animals: t.map(ForestAnimal),
+    /** Shifting Cave Dungeon state (changes dynamically as players make decisions). */
+    dungeonVariant: t.uint8().default(0),
+    /** Chamber 1 Decision: 1 = Left Corridor (Trial of Blades), 2 = Right Corridor (Trial of Shadows). */
+    dungeonChoice1: t.uint8().default(1),
+    /** Chamber 3 Decision: 1 = Pendulum Speed Mode, 2 = Rolling Boulder Surge Mode. */
+    dungeonChoice2: t.uint8().default(1),
+    /** 1 when the Sanctum Treasure Vault gate is unlocked, 0 when sealed. */
+    dungeonGateOpen: t.uint8().default(0),
+    /** Current Z coordinate of the rolling boulder trap in Chamber 3 (162..185). */
+    boulderZ: t.float32().default(164),
+    /** Current X lane of the rolling boulder (-3.2, 0, or +3.2 relative to cave center). */
+    boulderLaneX: t.float32().default(48),
   },
   "HubState",
 );

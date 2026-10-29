@@ -2,9 +2,11 @@ import { Room, definePlugins, type Client } from "colyseus";
 import { WebRTCPlugin } from "colyseus/plugins/webrtc";
 import type { MessageContext } from "@colyseus/shared-types";
 import {
+  ANCIENT_RUINS,
   ANIM,
   ARCADE_MSG,
   CAMPFIRE_BASE,
+  CAVE_DUNGEON,
   CINEMA_MSG,
   CINEMA_SEATS,
   FOOTBALL_MSG,
@@ -22,6 +24,8 @@ import {
   WORLD,
   clamp,
   isHexColor,
+  isInAncientRuins,
+  isInCaveDungeon,
   isInCinemaHall,
   sanitizeChat,
   sanitizeName,
@@ -35,6 +39,7 @@ import {
   type CinemaSetUrlMessage,
   type CinemaSyncSeekBroadcast,
   type CinemaTransferHostMessage,
+  type DungeonDecisionMessage,
   type EmoteBroadcast,
   type EmoteMessage,
   type FootballGoalBroadcast,
@@ -65,6 +70,9 @@ import { ideas, ideasReady, IdeaRejected } from "../ideas/index.js";
 interface Session {
   lastMoveAt: number;
   lastChatAt: number;
+  lastTrapHitAt: number;
+  lastSnakeBiteAt: number;
+  lastRuinsBlessingAt: number;
   clientId: string;
   enteredCinemaAt: number;
   joinedAt: number;
@@ -73,6 +81,8 @@ interface Session {
 interface AnimalBrain {
   id: string;
   species: AnimalSpecies;
+  homeXMin: number;
+  homeXMax: number;
   homeZMin: number;
   homeZMax: number;
   speed: number;
@@ -123,6 +133,7 @@ export class HubRoom extends Room<{ state: HubState }> {
   private triviaScores: Record<string, number> = {};
 
   private animalBrains = new Map<string, AnimalBrain>();
+  private vaultCloseTimer: ReturnType<typeof setTimeout> | undefined;
 
   override messages = {
     [MSG.move]: (client: Client, payload: MoveMessage) => this.onMove(client, payload),
@@ -160,12 +171,15 @@ export class HubRoom extends Room<{ state: HubState }> {
     [ARCADE_MSG.move]: (client: Client, payload: ArcadeMoveMessage) => this.onArcadeMove(client, payload),
     [ARCADE_MSG.reset]: (_client: Client, payload: { game?: string }) => this.onArcadeReset(payload?.game),
 
-    // South Campfire & Deep Forest Survival
+    // South Campfire, Deep Forest Survival, Ancient Ruins & Shifting Dungeon
     [FOREST_MSG.equipTool]: (client: Client, payload: ForestEquipMessage) => this.onForestEquip(client, payload),
     [FOREST_MSG.attackAnimal]: (client: Client, payload: ForestAttackMessage) => this.onForestAttack(client, payload),
     [FOREST_MSG.forageBerry]: (client: Client) => this.onForestForage(client),
     [FOREST_MSG.cookMeat]: (client: Client) => this.onForestCook(client),
     [FOREST_MSG.eatMeat]: (client: Client) => this.onForestEat(client),
+    [FOREST_MSG.ruinsBlessing]: (client: Client) => this.onRuinsBlessing(client),
+    [FOREST_MSG.dungeonDecision]: (client: Client, payload: DungeonDecisionMessage) =>
+      this.onDungeonDecision(client, payload),
 
     // Idea Wall
     [IDEA_MSG.list]: (): Idea[] => ideas.list(),
@@ -188,6 +202,12 @@ export class HubRoom extends Room<{ state: HubState }> {
     this.state.movieStartedAt = 0;
     this.state.moviePaused = 0;
     this.state.moviePausedAtSec = 0;
+    this.state.dungeonVariant = 0;
+    this.state.dungeonChoice1 = 1;
+    this.state.dungeonChoice2 = 1;
+    this.state.dungeonGateOpen = 0;
+    this.state.boulderZ = CAVE_DUNGEON.gauntletEndZ;
+    this.state.boulderLaneX = CAVE_DUNGEON.centerX;
 
     this.seedInitialMuralArt();
     this.spawnForestAnimals();
@@ -211,21 +231,35 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   private spawnForestAnimals() {
-    const specs: Array<{ id: string; species: AnimalSpecies; zMin: number; zMax: number; hp: number; speed: number }> = [
-      { id: "rabbit-1", species: "rabbit", zMin: 56, zMax: 85, hp: 1, speed: 3.4 },
-      { id: "rabbit-2", species: "rabbit", zMin: 58, zMax: 90, hp: 1, speed: 3.4 },
-      { id: "deer-1", species: "deer", zMin: 64, zMax: 102, hp: 2, speed: 3.0 },
-      { id: "deer-2", species: "deer", zMin: 68, zMax: 105, hp: 2, speed: 3.0 },
-      { id: "boar-1", species: "boar", zMin: 75, zMax: 112, hp: 3, speed: 2.6 },
-      { id: "boar-2", species: "boar", zMin: 80, zMax: 118, hp: 3, speed: 2.6 },
-      { id: "wolf-1", species: "wolf", zMin: 114, zMax: 148, hp: 4, speed: 3.6 },
-      { id: "wolf-2", species: "wolf", zMin: 116, zMax: 150, hp: 4, speed: 3.6 },
+    const specs: Array<{
+      id: string;
+      species: AnimalSpecies;
+      xMin: number;
+      xMax: number;
+      zMin: number;
+      zMax: number;
+      hp: number;
+      speed: number;
+    }> = [
+      { id: "rabbit-1", species: "rabbit", xMin: -55, xMax: 35, zMin: 76, zMax: 105, hp: 1, speed: 3.4 },
+      { id: "rabbit-2", species: "rabbit", xMin: -40, xMax: 45, zMin: 80, zMax: 110, hp: 1, speed: 3.4 },
+      { id: "deer-1", species: "deer", xMin: -65, xMax: 25, zMin: 86, zMax: 125, hp: 2, speed: 3.0 },
+      { id: "deer-2", species: "deer", xMin: -30, xMax: 50, zMin: 90, zMax: 132, hp: 2, speed: 3.0 },
+      { id: "boar-1", species: "boar", xMin: -70, xMax: 20, zMin: 98, zMax: 145, hp: 3, speed: 2.6 },
+      { id: "boar-2", species: "boar", xMin: -25, xMax: 35, zMin: 105, zMax: 150, hp: 3, speed: 2.6 },
+      { id: "wolf-1", species: "wolf", xMin: -75, xMax: 15, zMin: 128, zMax: 175, hp: 4, speed: 3.6 },
+      { id: "wolf-2", species: "wolf", xMin: -35, xMax: 30, zMin: 135, zMax: 185, hp: 4, speed: 3.6 },
+      // Slithering Forest Snakes & Temple Vipers
+      { id: "snake-1", species: "snake", xMin: -62, xMax: -28, zMin: 118, zMax: 156, hp: 2, speed: 3.3 },
+      { id: "snake-2", species: "snake", xMin: -58, xMax: -32, zMin: 125, zMax: 158, hp: 2, speed: 3.5 },
+      { id: "snake-3", species: "snake", xMin: -25, xMax: 25, zMin: 84, zMax: 128, hp: 1, speed: 3.2 },
+      { id: "snake-4", species: "snake", xMin: 15, xMax: 42, zMin: 96, zMax: 136, hp: 2, speed: 3.4 },
     ];
     for (const s of specs) {
       const animal = new ForestAnimal();
       animal.id = s.id;
       animal.species = s.species;
-      animal.x = (Math.random() * 2 - 1) * 55;
+      animal.x = s.xMin + Math.random() * (s.xMax - s.xMin);
       animal.z = s.zMin + Math.random() * (s.zMax - s.zMin);
       animal.rot = Math.random() * Math.PI * 2;
       animal.hp = s.hp;
@@ -234,6 +268,8 @@ export class HubRoom extends Room<{ state: HubState }> {
       this.animalBrains.set(s.id, {
         id: s.id,
         species: s.species,
+        homeXMin: s.xMin,
+        homeXMax: s.xMax,
         homeZMin: s.zMin,
         homeZMax: s.zMax,
         speed: s.speed,
@@ -248,6 +284,7 @@ export class HubRoom extends Room<{ state: HubState }> {
   private tickWorld(dt: number) {
     this.tickFootball(dt);
     this.tickAnimals(dt);
+    this.tickDungeon(dt);
   }
 
   private tickFootball(dt: number) {
@@ -348,15 +385,46 @@ export class HubRoom extends Room<{ state: HubState }> {
       if (animal.hp === 0) {
         if (now >= brain.respawnAt) {
           animal.hp = animal.maxHp;
-          animal.x = (Math.random() * 2 - 1) * 58;
+          animal.x = brain.homeXMin + Math.random() * (brain.homeXMax - brain.homeXMin);
           animal.z = brain.homeZMin + Math.random() * (brain.homeZMax - brain.homeZMin);
         }
         continue;
       }
 
+      // Snakes actively slither toward nearby players and bite if they get too close!
+      if (brain.species === "snake") {
+        let nearestPlayer: { sid: string; p: Player; d: number } | undefined;
+        for (const [sid, p] of this.state.players.entries()) {
+          if (p.seatId >= 0) continue;
+          const d = Math.hypot(p.x - animal.x, p.z - animal.z);
+          if (d < 7.5 && (!nearestPlayer || d < nearestPlayer.d)) {
+            nearestPlayer = { sid, p, d };
+          }
+        }
+        if (nearestPlayer) {
+          const { sid, p, d } = nearestPlayer;
+          if (d > 0.3) {
+            brain.vx = ((p.x - animal.x) / d) * brain.speed * 0.82;
+            brain.vz = ((p.z - animal.z) / d) * brain.speed * 0.82;
+            animal.rot = Math.atan2(brain.vx, brain.vz);
+          }
+          if (d < 1.35) {
+            const sess = this.sessions.get(sid);
+            if (sess && now - sess.lastSnakeBiteAt > 4500) {
+              sess.lastSnakeBiteAt = now;
+              p.energy = Math.max(10, p.energy - 15);
+              const cl = this.clients.find((c) => c.sessionId === sid);
+              cl?.send(MSG.notice, {
+                text: "🐍 Bitten by a venomous forest viper! (-15 Energy — press SPACE with a Spear/Bow to hunt it!)",
+              } satisfies NoticeMessage);
+            }
+          }
+        }
+      }
+
       if (now >= brain.changeDirAt) {
         brain.changeDirAt = now + 2200 + Math.random() * 3200;
-        if (Math.random() < 0.3) {
+        if (Math.random() < 0.25) {
           brain.vx = 0;
           brain.vz = 0;
         } else {
@@ -369,20 +437,131 @@ export class HubRoom extends Room<{ state: HubState }> {
 
       let nx = animal.x + brain.vx * dt;
       let nz = animal.z + brain.vz * dt;
-      if (nx < -75 || nx > 75) {
+      if (nx < brain.homeXMin || nx > brain.homeXMax) {
         brain.vx = -brain.vx;
-        nx = clamp(nx, -75, 75);
+        nx = clamp(nx, brain.homeXMin, brain.homeXMax);
       }
       if (nz < brain.homeZMin || nz > brain.homeZMax) {
         brain.vz = -brain.vz;
         nz = clamp(nz, brain.homeZMin, brain.homeZMax);
       }
-      if (Math.hypot(nx - CAMPFIRE_BASE.x, nz - CAMPFIRE_BASE.z) < 12) {
-        nz = CAMPFIRE_BASE.z + 13;
+      if (Math.hypot(nx - CAMPFIRE_BASE.x, nz - CAMPFIRE_BASE.z) < 13) {
+        nz = CAMPFIRE_BASE.z + 14;
         brain.vz = Math.abs(brain.vz);
       }
       animal.x = nx;
       animal.z = nz;
+    }
+  }
+
+  /**
+   * Server-side simulation of the Shifting Cave Dungeon booby traps:
+   * - Rolling Boulder Chute (`boulderZ`, `boulderLaneX`)
+   * - Swinging Pendulum Axes (`z = 167, 173, 179`)
+   * - Shifting Labyrinth Pressure Plates & Sliding Stone Doors (`z = 138..158`)
+   */
+  private tickDungeon(dt: number) {
+    const cx = CAVE_DUNGEON.centerX;
+    const boulderSpeed = this.state.dungeonChoice2 === 2 ? 12.5 : 8.5;
+    let bz = this.state.boulderZ - boulderSpeed * dt;
+    if (bz < CAVE_DUNGEON.gauntletStartZ - 1.5) {
+      bz = CAVE_DUNGEON.gauntletEndZ;
+      // Shift boulder lane based on active dungeon choices and variant
+      const lanes =
+        this.state.dungeonChoice2 === 2
+          ? [cx - 2.8, cx, cx + 2.8]
+          : [cx, cx - 2.6, cx + 2.6];
+      const nextIdx = (Math.floor(Date.now() / 1800) + this.state.dungeonVariant) % lanes.length;
+      this.state.boulderLaneX = lanes[nextIdx]!;
+    }
+    this.state.boulderZ = bz;
+
+    const now = Date.now();
+    const tSec = now / 1000;
+    const pendulumSpeed = this.state.dungeonChoice2 === 1 ? 2.6 : 1.85;
+
+    for (const [sid, p] of this.state.players.entries()) {
+      if (!isInCaveDungeon(p.x, p.z)) continue;
+      const sess = this.sessions.get(sid);
+      if (!sess || now - sess.lastTrapHitAt < 1800) continue;
+
+      // 1. Chamber 2: Sliding Stone Door & Pressure Plate Poison Dart Traps (z = 138..158)
+      if (p.z >= CAVE_DUNGEON.labyrinthStartZ && p.z <= CAVE_DUNGEON.labyrinthEndZ) {
+        const inLeftCorridor = p.x < cx;
+        const leftOpen = this.state.dungeonChoice1 === 1;
+        // If player tries to walk into the sealed side of the shifting labyrinth, push them back to Decision 1
+        if ((inLeftCorridor && !leftOpen) || (!inLeftCorridor && leftOpen)) {
+          p.z = CAVE_DUNGEON.labyrinthStartZ - 1.5;
+          sess.lastTrapHitAt = now;
+          const cl = this.clients.find((c) => c.sessionId === sid);
+          cl?.send(MSG.notice, {
+            text: `🚪 This labyrinth passage is sealed! Use the ${leftOpen ? "Left (🔥 Blades)" : "Right (🐍 Shadows)"} corridor or flip the Chamber 1 Pedestal!`,
+          } satisfies NoticeMessage);
+          continue;
+        }
+
+        // Check 3 rows of Pressure Plates at z = 142, 148, 154
+        const corridorCenterX = inLeftCorridor ? cx - 3.6 : cx + 3.6;
+        const plateRows = [142, 148, 154];
+        for (let r = 0; r < plateRows.length; r++) {
+          const pz = plateRows[r]!;
+          if (Math.abs(p.z - pz) < 1.15) {
+            // Which side of the sub-corridor has the rigged red pressure plate shifts with dungeonVariant!
+            const trapOnInnerSide = (r + this.state.dungeonVariant) % 2 === 0;
+            const trapX = trapOnInnerSide ? corridorCenterX + 1.15 : corridorCenterX - 1.15;
+            if (Math.abs(p.x - trapX) < 1.1) {
+              sess.lastTrapHitAt = now;
+              p.z = CAVE_DUNGEON.labyrinthStartZ - 2.0;
+              p.energy = Math.max(10, p.energy - 18);
+              const cl = this.clients.find((c) => c.sessionId === sid);
+              cl?.send(MSG.notice, {
+                text: "🎯 Poison Dart Trap! You stepped on a red pressure plate and got knocked back! (-18 Energy — hug the mossy green tiles!)",
+              } satisfies NoticeMessage);
+              break;
+            }
+          }
+        }
+      }
+
+      // 2. Chamber 3: Swinging Pendulum Axes (z = 167, 173, 179) & Rolling Boulder
+      if (p.z >= CAVE_DUNGEON.gauntletStartZ - 1 && p.z <= CAVE_DUNGEON.gauntletEndZ + 1) {
+        const bladeZs = [167, 173, 179];
+        let hitBlade = false;
+        for (let i = 0; i < bladeZs.length; i++) {
+          const bzBlade = bladeZs[i]!;
+          if (Math.abs(p.z - bzBlade) < 1.05) {
+            const swingAngle = Math.sin(tSec * pendulumSpeed + i * 2.1) * 0.95;
+            const bladeX = cx + Math.sin(swingAngle) * 5.2;
+            if (Math.abs(p.x - bladeX) < 1.65) {
+              hitBlade = true;
+              break;
+            }
+          }
+        }
+        if (hitBlade) {
+          sess.lastTrapHitAt = now;
+          p.z = CAVE_DUNGEON.decision2Z - 1.0;
+          p.energy = Math.max(10, p.energy - 20);
+          const cl = this.clients.find((c) => c.sessionId === sid);
+          cl?.send(MSG.notice, {
+            text: "🪓 Sliced by a Swinging Pendulum Axe! Knocked back to the Crossroads (-20 Energy).",
+          } satisfies NoticeMessage);
+          continue;
+        }
+
+        // Rolling Boulder collision check (alcoves at |x - cx| > 5.2 are always safe!)
+        const inSafeAlcove = Math.abs(p.x - cx) > 5.0;
+        if (!inSafeAlcove && Math.hypot(p.x - this.state.boulderLaneX, p.z - this.state.boulderZ) < 2.05) {
+          sess.lastTrapHitAt = now;
+          p.z = CAVE_DUNGEON.decision2Z - 1.5;
+          p.energy = Math.max(10, p.energy - 25);
+          const cl = this.clients.find((c) => c.sessionId === sid);
+          cl?.send(MSG.notice, {
+            text: "🪨 Flattened by the Rolling Boulder! Duck into the side wall alcoves as it rumbles past (-25 Energy).",
+          } satisfies NoticeMessage);
+          continue;
+        }
+      }
     }
   }
 
@@ -414,6 +593,9 @@ export class HubRoom extends Room<{ state: HubState }> {
     this.sessions.set(client.sessionId, {
       lastMoveAt: now,
       lastChatAt: 0,
+      lastTrapHitAt: 0,
+      lastSnakeBiteAt: 0,
+      lastRuinsBlessingAt: 0,
       clientId,
       enteredCinemaAt: 0,
       joinedAt: now,
@@ -440,6 +622,7 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   override onDispose(): void {
+    if (this.vaultCloseTimer) clearTimeout(this.vaultCloseTimer);
     console.log(`[hub] room ${this.roomId} disposed`);
   }
 
@@ -615,7 +798,7 @@ export class HubRoom extends Room<{ state: HubState }> {
     this.broadcast(ARCADE_MSG.state, this.getArcadeState());
   }
 
-  // ---- South Campfire & Forest Hunting / Survival ---------------------------
+  // ---- South Campfire, Forest Hunting, Ancient Ruins & Shifting Dungeon -----
 
   private onForestEquip(client: Client, payload: ForestEquipMessage): void {
     const player = this.state.players.get(client.sessionId);
@@ -659,9 +842,16 @@ export class HubRoom extends Room<{ state: HubState }> {
       brain.respawnAt = Date.now() + 12_000;
       const meatYield = animal.species === "boar" || animal.species === "wolf" ? 2 : 1;
       player.rawMeat = Math.min(20, player.rawMeat + meatYield);
-      client.send(MSG.notice, {
-        text: `🏹 Hunted ${animal.species}! +${meatYield} Raw Meat 🥩 (Roast it at the Campfire!)`,
-      } satisfies NoticeMessage);
+      if (animal.species === "snake") {
+        player.energy = Math.min(100, player.energy + 15);
+        client.send(MSG.notice, {
+          text: `🐍 Slayed forest viper! +1 Raw Meat 🥩 & +15 Venom Antidote Energy!`,
+        } satisfies NoticeMessage);
+      } else {
+        client.send(MSG.notice, {
+          text: `🏹 Hunted ${animal.species}! +${meatYield} Raw Meat 🥩 (Roast it at the Campfire!)`,
+        } satisfies NoticeMessage);
+      }
     } else {
       const nx = (animal.x - player.x) / Math.max(0.5, d);
       const nz = (animal.z - player.z) / Math.max(0.5, d);
@@ -676,19 +866,19 @@ export class HubRoom extends Room<{ state: HubState }> {
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
     player.energy = Math.min(100, player.energy + 12);
-    client.send(MSG.notice, { text: "🫐 Foraged wild forest berries! +12 Energy." } satisfies NoticeMessage);
+    client.send(MSG.notice, { text: "🫐 Foraged wild forest berries & glowing mushrooms! +12 Energy." } satisfies NoticeMessage);
   }
 
   private onForestCook(client: Client): void {
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
-    if (Math.hypot(player.x - CAMPFIRE_BASE.x, player.z - CAMPFIRE_BASE.z) > 10) {
-      client.send(MSG.notice, { text: "🔥 Stand near the Campfire to roast meat!" } satisfies NoticeMessage);
+    if (Math.hypot(player.x - CAMPFIRE_BASE.x, player.z - CAMPFIRE_BASE.z) > 12) {
+      client.send(MSG.notice, { text: "🔥 Stand near the Forest Campfire to roast meat!" } satisfies NoticeMessage);
       return;
     }
     if (player.rawMeat <= 0) {
       client.send(MSG.notice, {
-        text: "🥩 You have no Raw Meat! Hunt animals in the Southern Forest first.",
+        text: "🥩 You have no Raw Meat! Hunt animals or snakes in the Deep Forest first.",
       } satisfies NoticeMessage);
       return;
     }
@@ -712,6 +902,114 @@ export class HubRoom extends Room<{ state: HubState }> {
     client.send(MSG.notice, {
       text: `🍖 Ate Cooked Steak! Energy is now ${player.energy}%.`,
     } satisfies NoticeMessage);
+  }
+
+  private onRuinsBlessing(client: Client): void {
+    const player = this.state.players.get(client.sessionId);
+    const session = this.sessions.get(client.sessionId);
+    if (!player || !session) return;
+    if (!isInAncientRuins(player.x, player.z)) {
+      client.send(MSG.notice, { text: "🏛️ Walk into the South-West Ancient Temple Ruins first!" } satisfies NoticeMessage);
+      return;
+    }
+    const now = Date.now();
+    if (now - session.lastRuinsBlessingAt < 10_000) {
+      client.send(MSG.notice, { text: "🏛️ The Ancient Sun Altar is recharging its solar runes…" } satisfies NoticeMessage);
+      return;
+    }
+    session.lastRuinsBlessingAt = now;
+    player.energy = Math.min(100, player.energy + 30);
+    this.broadcast(MSG.emote, { id: client.sessionId, anim: ANIM.cheer, emoji: "🏛️" } satisfies EmoteBroadcast);
+    const runeHint =
+      this.state.dungeonVariant % 3 === 0
+        ? "🩸 Crimson Idol"
+        : this.state.dungeonVariant % 3 === 1
+          ? "🌿 Emerald Idol"
+          : "☀️ Golden Idol";
+    client.send(MSG.notice, {
+      text: `🏛️ Ancient Sun Blessing (+30 Energy)! Temple inscription whispers: "Seek the ${runeHint} in the Mountain Cave Sanctum…"`,
+    } satisfies NoticeMessage);
+  }
+
+  /**
+   * Handles player decisions inside the 90m Shifting Cave Dungeon:
+   * - Stage 1 (Chamber 1 Pedestals): Chooses Left (🔥 Trial of Blades) vs Right (🐍 Trial of Shadows),
+   *   sliding the labyrinth stone doors and shifting the pressure plate pattern!
+   * - Stage 2 (Chamber 3 Crossroads Totem): Switches between ⚡ Rapid Pendulum Mode and 🪨 Boulder Surge Mode!
+   * - Stage 3 (Chamber 4 Sanctum Idols): Picking the True Idol unlocks the Treasure Vault; picking a Trap Idol
+   *   reshuffles the entire dungeon layout and teleports you back to the Crossroads!
+   */
+  private onDungeonDecision(client: Client, payload: DungeonDecisionMessage): void {
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    if (!isInCaveDungeon(player.x, player.z)) {
+      client.send(MSG.notice, { text: "🦇 Enter the Eastern Mountain Cave Dungeon first!" } satisfies NoticeMessage);
+      return;
+    }
+
+    const stage = payload?.stage;
+    const choice = payload?.choice;
+
+    if (stage === 1 && (choice === 1 || choice === 2)) {
+      this.state.dungeonChoice1 = choice;
+      this.state.dungeonVariant = (this.state.dungeonVariant + 1) % 3;
+      const label = choice === 1 ? "🔥 Trial of Blades (Left Labyrinth Open)" : "🐍 Trial of Shadows (Right Labyrinth Open)";
+      this.broadcast(MSG.notice, {
+        text: `🗝️ ${player.name} activated ${label} — the cave walls and pressure plates shifted!`,
+      } satisfies NoticeMessage);
+      return;
+    }
+
+    if (stage === 2 && (choice === 1 || choice === 2)) {
+      this.state.dungeonChoice2 = choice;
+      const label = choice === 1 ? "⚡ Twin Pendulum Rhythm" : "🪨 Heavy Rolling Boulder Surge";
+      this.broadcast(MSG.notice, {
+        text: `⚙️ ${player.name} turned the Crossroads Totem to ${label}!`,
+      } satisfies NoticeMessage);
+      return;
+    }
+
+    if (stage === 3 && (choice === 1 || choice === 2 || choice === 3)) {
+      const trueChoice = (this.state.dungeonVariant % 3) + 1;
+      const idolNames: Record<number, string> = {
+        1: "🩸 Crimson Idol",
+        2: "🌿 Emerald Idol",
+        3: "☀️ Golden Idol",
+      };
+
+      if (choice === trueChoice) {
+        this.state.dungeonGateOpen = 1;
+        // Reward everyone currently inside the cave dungeon!
+        for (const [sid, p] of this.state.players.entries()) {
+          if (isInCaveDungeon(p.x, p.z)) {
+            p.energy = 100;
+            p.cookedMeat = Math.min(20, p.cookedMeat + 3);
+            this.broadcast(MSG.emote, { id: sid, anim: ANIM.mindblown, emoji: "👑" } satisfies EmoteBroadcast);
+          }
+        }
+        this.broadcast(MSG.notice, {
+          text: `👑 ${player.name} chose the true ${idolNames[choice]} and unlocked the Ancient Cave Treasure Vault! Everyone in the cave received 100% Energy & +3 Steaks 🍖!`,
+        } satisfies NoticeMessage);
+
+        if (this.vaultCloseTimer) clearTimeout(this.vaultCloseTimer);
+        this.vaultCloseTimer = setTimeout(() => {
+          this.state.dungeonGateOpen = 0;
+          this.state.dungeonVariant = (this.state.dungeonVariant + 1) % 3;
+          this.state.dungeonChoice1 = this.state.dungeonChoice1 === 1 ? 2 : 1;
+        }, 18_000);
+      } else {
+        // Mimic / Trap Idol: reshuffle the entire dungeon layout and send player back to the Crossroads!
+        this.state.dungeonGateOpen = 0;
+        this.state.dungeonVariant = (this.state.dungeonVariant + 1) % 3;
+        this.state.dungeonChoice1 = this.state.dungeonChoice1 === 1 ? 2 : 1;
+        this.state.dungeonChoice2 = this.state.dungeonChoice2 === 1 ? 2 : 1;
+        player.z = CAVE_DUNGEON.decision2Z - 1.5;
+        player.energy = Math.max(15, player.energy - 20);
+        this.broadcast(MSG.notice, {
+          text: `💀 Trap Idol! ${player.name} touched the false ${idolNames[choice]} — the entire dungeon shifted into Layout #${this.state.dungeonVariant + 1}!`,
+        } satisfies NoticeMessage);
+      }
+    }
   }
 
   // ---- Cinema Host & Simple Link Player -------------------------------------
@@ -829,7 +1127,6 @@ export class HubRoom extends Room<{ state: HubState }> {
   private onCinemaSetDuration(client: Client, payload: CinemaSetDurationMessage): void {
     const dur = typeof payload?.durationSec === "number" && isFinite(payload.durationSec) ? payload.durationSec : 0;
     if (dur <= 1 || dur > 86_400) return;
-    // Allow either the Host or the first viewer whose player resolves metadata to report the real video duration
     if (this.state.cinemaHostId === client.sessionId || this.state.movieDurationSec <= 0) {
       this.state.movieDurationSec = Math.round(dur);
     }

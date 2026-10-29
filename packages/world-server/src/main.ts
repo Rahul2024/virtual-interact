@@ -10,6 +10,13 @@ await server.listen(port);
 
 console.log(`[world-server] listening on ws://localhost:${port}`);
 
+process.on("uncaughtException", (err) => {
+  console.error("[world-server] uncaughtException:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[world-server] unhandledRejection:", reason);
+});
+
 // Make sure the last Idea Wall change reaches the disk before we go.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {

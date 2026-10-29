@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import {
+  ANCIENT_RUINS,
   ARCADE_ZONE,
   CAMPFIRE_BASE,
+  CAVE_DUNGEON,
   CINEMA_HALL,
   CINEMA_SEATS,
   FOOTBALL_STADIUM,
@@ -40,6 +42,15 @@ export interface World {
   isNight: boolean;
   setScreenTexture(tex: THREE.Texture, accentColor?: string): void;
   setFootballState(ballX: number, ballZ: number, scoreRed: number, scoreBlue: number): void;
+  setDungeonState(
+    variant: number,
+    choice1: number,
+    choice2: number,
+    gateOpen: number,
+    boulderZ: number,
+    boulderLaneX: number,
+    nowMs: number,
+  ): void;
   syncAnimals(animals: AnimalRenderState[]): void;
   paintMuralData(pixels: number[]): void;
   paintMuralPixel(x: number, y: number, colorIdx: number): void;
@@ -53,13 +64,18 @@ const PALETTE = {
   skySunset: "#d97b66",
   skyNight: "#090d1c",
   grass: "#6fa86a",
-  forestGrass: "#456e43",
+  forestGrass: "#355e37",
+  hillGrass: "#3f6d3e",
+  mountainRock: "#4b5563",
+  caveStone: "#27272a",
+  ruinStone: "#94a3b8",
   stone: "#cfc8bb",
   road: "#484d59",
   path: "#bdb5a6",
   water: "#3b8ec2",
   trunk: "#7a4e33",
-  leaves: ["#3f8f4f", "#4ea35a", "#5fb86a", "#2e6b3b"],
+  birchTrunk: "#e2e8f0",
+  leaves: ["#3f8f4f", "#4ea35a", "#5fb86a", "#2e6b3b", "#84a93c", "#22543d"],
   buildings: ["#e9c4a8", "#c8d8e8", "#f1e0a6", "#d9c3e6", "#bfe0c9", "#f3c6c6", "#dcd3c2"],
   roof: "#6b5b53",
   lamp: "#3b3f46",
@@ -172,6 +188,8 @@ function createNoticeBoard(
 
 interface AnimalMeshEntry {
   group: THREE.Group;
+  species: string;
+  segments?: THREE.Mesh[];
   targetX: number;
   targetZ: number;
   targetRot: number;
@@ -188,9 +206,9 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PALETTE.skyDay);
-  scene.fog = new THREE.Fog(PALETTE.skyDay, 75, 210);
+  scene.fog = new THREE.Fog(PALETTE.skyDay, 75, 235);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 450);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 480);
   camera.position.set(0, 6, 12);
 
   const colliders = new Colliders();
@@ -215,8 +233,10 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   // East District: Multiplayer Neon Arcade Plaza
   addArcadePlaza(scene, colliders);
 
-  // South District: Campfire Basecamp & Deep Forest Wilderness
-  const { campfireLight, flameGroup } = addCampfireAndForestWilderness(scene, colliders);
+  // South District: Foothill Ridge, Deep Campfire Valley, Dunes, Insects, Ancient Ruins & Shifting Cave Dungeon
+  const { campfireLight, flameGroup, fireflies, dragonflies } = addCampfireAndForestWilderness(scene, colliders);
+  const { sunAltarRing } = addAncientMonumentRuins(scene, colliders);
+  const dungeonRig = addShiftingCaveDungeon(scene, colliders);
 
   addBuildings(scene, colliders, windowMaterials);
   addCityAndForestTrees(scene, colliders);
@@ -267,7 +287,19 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         updateFootballBoard(scoreRed, scoreBlue);
       }
     },
+    setDungeonState(
+      variant: number,
+      choice1: number,
+      choice2: number,
+      gateOpen: number,
+      boulderZ: number,
+      boulderLaneX: number,
+      nowMs: number,
+    ) {
+      dungeonRig.update(variant, choice1, choice2, gateOpen, boulderZ, boulderLaneX, nowMs);
+    },
     syncAnimals(animals: AnimalRenderState[]) {
+      const now = performance.now();
       for (const a of animals) {
         let entry = animalEntries.get(a.id);
         if (!entry) {
@@ -286,7 +318,15 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         entry.group.position.x += (entry.targetX - entry.group.position.x) * 0.18;
         entry.group.position.z += (entry.targetZ - entry.group.position.z) * 0.18;
         entry.group.rotation.y = entry.targetRot;
-        entry.group.position.y = Math.abs(Math.sin(performance.now() * 0.008 + entry.targetX)) * 0.12;
+
+        if (entry.species === "snake" && entry.segments) {
+          entry.group.position.y = 0.02;
+          entry.segments.forEach((seg, idx) => {
+            seg.position.x = Math.sin(now * 0.011 + idx * 0.85 + entry.targetX) * 0.16;
+          });
+        } else {
+          entry.group.position.y = Math.abs(Math.sin(now * 0.008 + entry.targetX)) * 0.12;
+        }
       }
     },
     paintMuralData(pixels: number[]) {
@@ -299,15 +339,27 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       const tSec = nowMs / 1000;
       flameGroup.scale.y = 0.92 + Math.sin(tSec * 11) * 0.12 + Math.cos(tSec * 17) * 0.06;
       flameGroup.rotation.y = tSec * 1.5;
+      sunAltarRing.rotation.z = tSec * 0.7;
+
+      // Animate forest fireflies & river dragonflies
+      fireflies.position.y = Math.sin(tSec * 1.8) * 0.35;
+      fireflies.rotation.y = Math.sin(tSec * 0.15) * 0.08;
+      dragonflies.forEach((df, i) => {
+        const angle = tSec * 1.9 + i * 1.3;
+        df.position.x = df.userData.homeX + Math.cos(angle) * 3.8;
+        df.position.z = df.userData.homeZ + Math.sin(angle * 1.4) * 2.2;
+        df.position.y = 0.85 + Math.sin(tSec * 6 + i) * 0.22;
+        df.rotation.y = -angle;
+      });
 
       const hour =
-        worldObj.timeMode === "day"
-          ? 12.5
-          : worldObj.timeMode === "sunset"
-            ? 18.0
-            : worldObj.timeMode === "night"
-              ? 22.5
-              : getIndianHourFloat();
+        worldObj.timeMode === "ist"
+          ? getIndianHourFloat()
+          : worldObj.timeMode === "day"
+            ? 12.5
+            : worldObj.timeMode === "sunset"
+              ? 18.0
+              : 22.5;
 
       let nightFactor = 0;
       if (hour >= 19.2 || hour < 5.2) {
@@ -329,13 +381,13 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       scene.background = skyColor;
       if (scene.fog instanceof THREE.Fog) {
         scene.fog.color.copy(skyColor);
-        scene.fog.near = THREE.MathUtils.lerp(75, 42, nightFactor);
-        scene.fog.far = THREE.MathUtils.lerp(215, 145, nightFactor);
+        scene.fog.near = THREE.MathUtils.lerp(80, 44, nightFactor);
+        scene.fog.far = THREE.MathUtils.lerp(245, 160, nightFactor);
       }
 
       sun.intensity = THREE.MathUtils.lerp(2.2, 0.22, nightFactor);
       sun.color.set(nightFactor > 0.3 && nightFactor < 0.8 ? "#ff9e66" : nightFactor >= 0.8 ? "#6b8cff" : "#fff4e0");
-      hemi.intensity = THREE.MathUtils.lerp(0.9, 0.24, nightFactor);
+      hemi.intensity = THREE.MathUtils.lerp(0.9, 0.26, nightFactor);
 
       moonGroup.visible = nightFactor > 0.25;
       stars.visible = nightFactor > 0.35;
@@ -351,7 +403,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       for (const wm of windowMaterials) {
         wm.emissiveIntensity = THREE.MathUtils.lerp(0.12, 1.35, nightFactor);
       }
-      campfireLight.intensity = THREE.MathUtils.lerp(2.8, 7.5, nightFactor) + Math.sin(tSec * 9) * 0.4;
+      campfireLight.intensity = THREE.MathUtils.lerp(3.2, 8.2, nightFactor) + Math.sin(tSec * 9) * 0.4;
     },
     resize,
     render() {
@@ -372,11 +424,11 @@ function addAtmosphereAndLights(scene: THREE.Scene) {
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 260;
-  sun.shadow.camera.left = -125;
-  sun.shadow.camera.right = 125;
-  sun.shadow.camera.top = 125;
-  sun.shadow.camera.bottom = -125;
+  sun.shadow.camera.far = 300;
+  sun.shadow.camera.left = -150;
+  sun.shadow.camera.right = 150;
+  sun.shadow.camera.top = 150;
+  sun.shadow.camera.bottom = -150;
   sun.shadow.bias = -0.0005;
   scene.add(sun);
   scene.add(sun.target);
@@ -397,7 +449,7 @@ function addAtmosphereAndLights(scene: THREE.Scene) {
   for (let i = 0; i < 300; i++) {
     const theta = rand() * Math.PI * 2;
     const phi = rand() * Math.PI * 0.42;
-    const r = 190;
+    const r = 220;
     starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * r;
     starPositions[i * 3 + 1] = Math.cos(phi) * r + 25;
     starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * r;
@@ -413,20 +465,16 @@ function addAtmosphereAndLights(scene: THREE.Scene) {
   return { hemi, sun, moonGroup, stars };
 }
 
-function Float232ArrayOrFloat32(n: number) {
-  return new Float32Array(n);
-}
-
 function addGroundAndRingRoad(scene: THREE.Scene) {
-  const size = WORLD.size + 100;
+  const size = WORLD.size + 120;
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(size, size), standard(PALETTE.grass));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const forestGround = new THREE.Mesh(new THREE.PlaneGeometry(320, 145), standard(PALETTE.forestGrass));
+  const forestGround = new THREE.Mesh(new THREE.PlaneGeometry(420, 210), standard(PALETTE.forestGrass));
   forestGround.rotation.x = -Math.PI / 2;
-  forestGround.position.set(0, 0.008, 104);
+  forestGround.position.set(0, 0.008, 138);
   forestGround.receiveShadow = true;
   scene.add(forestGround);
 
@@ -493,7 +541,6 @@ function addPlaza(
   }
 }
 
-/** Subtle floor ring marking the Open Voice Zone around the fountain (no floating HTML banner!). */
 function addOpenSocialZoneRing(scene: THREE.Scene) {
   const ringGeo = new THREE.RingGeometry(SOCIAL_ZONE.radius - 0.18, SOCIAL_ZONE.radius, 64);
   const ringMat = new THREE.MeshBasicMaterial({
@@ -556,8 +603,6 @@ function addBench(scene: THREE.Scene, colliders: Colliders, x: number, z: number
   bench.position.set(x, 0, z);
   bench.rotation.y = -yaw;
   scene.add(bench);
-  colliders.circles.push({ x: z, z: x, r: 0 }); // no-op placeholder
-  colliders.circles.pop();
   colliders.circles.push({ x, z, r: 0.9 });
 }
 
@@ -570,7 +615,7 @@ function addAvenues(
   const mat = standard(PALETTE.path);
   const specs: Array<[number, number, number, number]> = [
     [0, -24, 5.5, 22],
-    [0, 29, 5.5, 30],
+    [0, 35, 5.0, 42],
     [-38, 0, 48, 5.5],
     [38, 0, 48, 5.5],
   ];
@@ -597,7 +642,6 @@ function addAvenues(
   }
 }
 
-/** North-East Open-Mic Stage (`x = 24, z = -42`) with a 3D wooden notice board. */
 function addOpenMicStage(scene: THREE.Scene, colliders: Colliders) {
   const g = new THREE.Group();
   const cx = OPEN_MIC_STAGE.x;
@@ -649,7 +693,6 @@ function addOpenMicStage(scene: THREE.Scene, colliders: Colliders) {
   });
 }
 
-/** North-West Shared Pixel Graffiti Mural Wall (`x = -24, z = -42`) with a 3D notice board. */
 function addGraffitiMuralWall(scene: THREE.Scene, colliders: Colliders) {
   const cx = GRAFFITI_MURAL.x;
   const cz = GRAFFITI_MURAL.z;
@@ -714,7 +757,6 @@ function addGraffitiMuralWall(scene: THREE.Scene, colliders: Colliders) {
   return { muralCanvas, muralTexture, drawPixel, drawAllPixels };
 }
 
-/** West District: Team Football (Soccer) Stadium (`x = -82, z = 0`) with a 3D Scoreboard Notice Board. */
 function addFootballStadium(scene: THREE.Scene, colliders: Colliders) {
   const cx = FOOTBALL_STADIUM.centerX;
   const cz = FOOTBALL_STADIUM.centerZ;
@@ -802,7 +844,6 @@ function addFootballStadium(scene: THREE.Scene, colliders: Colliders) {
   return { ballMesh, updateFootballBoard };
 }
 
-/** East District: Multiplayer Neon Arcade Plaza (`x = +82, z = 0`) with a 3D wooden notice board. */
 function addArcadePlaza(scene: THREE.Scene, colliders: Colliders) {
   const cx = ARCADE_ZONE.centerX;
   const cz = ARCADE_ZONE.centerZ;
@@ -849,15 +890,70 @@ function addArcadePlaza(scene: THREE.Scene, colliders: Colliders) {
 }
 
 /**
- * South District: Campfire Basecamp (`z = +44`) + Deep Forest Wilderness
- * with a single physical 3D wooden notice board (no floating HTML tags!).
+ * South District:
+ * 1. Foothill Ridge & Canyon Trail (`z = +36..+56`) that screens off the city buildings
+ *    so the Campfire Valley at `z = +68` feels completely immersed in the wilderness!
+ * 2. Rolling Terrain Dunes & Mountain Backdrop (`18m–32m` tall peaks)
+ * 3. Glowing Firefly Swarms & Flying Dragonflies
  */
 function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders) {
   const cx = CAMPFIRE_BASE.x;
   const cz = CAMPFIRE_BASE.z;
   const g = new THREE.Group();
 
-  const clearing = new THREE.Mesh(new THREE.CircleGeometry(11.5, 36), standard("#8c7355"));
+  // 1. Foothill Ridge screening the city from the Campfire Valley (leaving a 7m central canyon pass)
+  const hillMat = standard(PALETTE.hillGrass);
+  const rockMat = standard(PALETTE.mountainRock);
+  const ridgeMounds: Array<[number, number, number, number]> = [
+    [-16, 46, 12, 8.5],
+    [-32, 48, 15, 10.5],
+    [-52, 50, 18, 12.0],
+    [-76, 52, 20, 11.0],
+    [16, 46, 12, 8.5],
+    [32, 48, 15, 10.5],
+    [52, 50, 18, 12.0],
+    [76, 52, 20, 11.0],
+  ];
+  for (const [hx, hz, radius, height] of ridgeMounds) {
+    const mound = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 9), hillMat);
+    mound.position.set(hx, height * 0.45, hz);
+    mound.castShadow = mound.receiveShadow = true;
+    g.add(mound);
+    const crag = new THREE.Mesh(new THREE.DodecahedronGeometry(radius * 0.42, 0), rockMat);
+    crag.position.set(hx * 0.96, height * 0.65, hz + 1.5);
+    g.add(crag);
+    colliders.circles.push({ x: hx, z: hz, r: radius * 0.72 });
+  }
+
+  // 2. Rolling Forest Terrain Dunes & Mountain Backdrop along the West, South, and East horizons
+  const duneSpecs: Array<[number, number, number, number]> = [
+    [-34, 88, 14, 3.2],
+    [28, 92, 13, 2.8],
+    [-22, 125, 15, 3.4],
+    [12, 145, 16, 3.6],
+    [-68, 105, 18, 5.5],
+    [-88, 145, 24, 16.0],
+    [-75, 185, 28, 22.0],
+    [-35, 205, 30, 25.0],
+    [0, 212, 32, 26.0],
+  ];
+  for (const [dx, dz, rad, h] of duneSpecs) {
+    const isPeak = h >= 12;
+    const mesh = new THREE.Mesh(
+      new THREE.ConeGeometry(rad, h, isPeak ? 7 : 12),
+      isPeak ? rockMat : hillMat,
+    );
+    mesh.position.set(dx, h * 0.42, dz);
+    mesh.receiveShadow = true;
+    if (isPeak) {
+      mesh.castShadow = true;
+      colliders.circles.push({ x: dx, z: dz, r: rad * 0.65 });
+    }
+    g.add(mesh);
+  }
+
+  // 3. Deep Forest Campfire Clearing at z = +68
+  const clearing = new THREE.Mesh(new THREE.CircleGeometry(12.5, 36), standard("#7d6549"));
   clearing.rotation.x = -Math.PI / 2;
   clearing.position.set(cx, 0.02, cz);
   clearing.receiveShadow = true;
@@ -865,28 +961,28 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
 
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 0), standard("#6b7280"));
-    rock.position.set(cx + Math.cos(a) * 1.15, 0.2, cz + Math.sin(a) * 1.15);
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), standard("#6b7280"));
+    rock.position.set(cx + Math.cos(a) * 1.2, 0.2, cz + Math.sin(a) * 1.2);
     g.add(rock);
   }
 
   const flameGroup = new THREE.Group();
   flameGroup.position.set(cx, 0.2, cz);
   const outerFlame = new THREE.Mesh(
-    new THREE.ConeGeometry(0.75, 1.65, 7),
+    new THREE.ConeGeometry(0.8, 1.75, 7),
     standard("#ff7b00", { emissive: "#ff5500", emissiveIntensity: 1.8 }),
   );
-  outerFlame.position.y = 0.8;
+  outerFlame.position.y = 0.85;
   const innerFlame = new THREE.Mesh(
-    new THREE.ConeGeometry(0.45, 1.1, 6),
+    new THREE.ConeGeometry(0.48, 1.15, 6),
     standard("#ffe66d", { emissive: "#ffcf33", emissiveIntensity: 2.2 }),
   );
-  innerFlame.position.y = 0.55;
+  innerFlame.position.y = 0.58;
   flameGroup.add(outerFlame, innerFlame);
   g.add(flameGroup);
 
-  const campfireLight = new THREE.PointLight("#ff8c2b", 4.5, 28, 1.3);
-  campfireLight.position.set(cx, 2.2, cz);
+  const campfireLight = new THREE.PointLight("#ff8c2b", 5.2, 32, 1.3);
+  campfireLight.position.set(cx, 2.4, cz);
   g.add(campfireLight);
   colliders.circles.push({ x: cx, z: cz, r: 1.4 });
 
@@ -909,52 +1005,448 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
   rack.position.set(CAMPFIRE_BASE.toolRackPos.x, 0.9, CAMPFIRE_BASE.toolRackPos.z);
   g.add(rack);
 
-  // Winding Forest River at z = +108 with Two Wooden Bridges
+  // Winding Forest River at z = +112 with Three Bridges (leading to Ruins & Mountain Cave)
   const river = new THREE.Mesh(
-    new THREE.PlaneGeometry(300, 9),
-    standard(PALETTE.water, { roughness: 0.25, emissive: "#164e78", emissiveIntensity: 0.3 }),
+    new THREE.PlaneGeometry(380, 8.5),
+    standard(PALETTE.water, { roughness: 0.25, emissive: "#164e78", emissiveIntensity: 0.32 }),
   );
   river.rotation.x = -Math.PI / 2;
-  river.position.set(0, 0.02, 108);
+  river.position.set(0, 0.02, 112);
   g.add(river);
 
-  for (const bx of [-22, 22]) {
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.35, 11), standard("#7c5234"));
-    bridge.position.set(bx, 0.18, 108);
+  for (const bx of [-46, 0, 48]) {
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.38, 10.5), standard("#7c5234"));
+    bridge.position.set(bx, 0.19, 112);
     bridge.receiveShadow = true;
     g.add(bridge);
   }
 
-  for (const rx of [-38, 38]) {
-    for (let p = 0; p < 4; p++) {
-      const a = (p / 4) * Math.PI * 2;
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.7, 4.5, 8), standard("#94a3b8"));
-      col.position.set(rx + Math.cos(a) * 4.5, 2.25, 136 + Math.sin(a) * 4.5);
-      col.castShadow = true;
-      g.add(col);
-    }
+  // 4. Glowing Forest Fireflies & Flying River Dragonflies
+  const ffGeo = new THREE.BufferGeometry();
+  const ffCount = 200;
+  const ffPositions = new Float32Array(ffCount * 3);
+  const rand = mulberry32(774411);
+  for (let i = 0; i < ffCount; i++) {
+    ffPositions[i * 3] = (rand() * 2 - 1) * 115;
+    ffPositions[i * 3 + 1] = 0.6 + rand() * 3.8;
+    ffPositions[i * 3 + 2] = 58 + rand() * 135;
+  }
+  ffGeo.setAttribute("position", new THREE.BufferAttribute(ffPositions, 3));
+  const fireflies = new THREE.Points(
+    ffGeo,
+    new THREE.PointsMaterial({ color: "#bef264", size: 2.2, sizeAttenuation: false }),
+  );
+  g.add(fireflies);
+
+  const dragonflies: THREE.Group[] = [];
+  const wingMat = new THREE.MeshBasicMaterial({ color: "#67e8f9", side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+  const bodyMat = standard("#06b6d4", { emissive: "#0891b2", emissiveIntensity: 0.8 });
+  for (let i = 0; i < 14; i++) {
+    const df = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.42), bodyMat);
+    const w1 = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.14), wingMat);
+    w1.rotation.x = -Math.PI / 2;
+    df.add(b, w1);
+    const hx = (rand() * 2 - 1) * 65;
+    const hz = 74 + rand() * 85;
+    df.userData = { homeX: hx, homeZ: hz };
+    df.position.set(hx, 1.1, hz);
+    g.add(df);
+    dragonflies.push(df);
   }
 
   scene.add(g);
 
   createNoticeBoard(scene, colliders, {
-    x: cx + 6.2,
-    z: cz - 6.5,
+    x: cx + 6.5,
+    z: cz - 6.8,
     yaw: Math.PI,
-    title: "CAMPFIRE & FOREST",
+    title: "DEEP FOREST CAMP",
     lines: [
-      "Press E near logs to sit & talk in the circle",
-      "Grab a Torch, Spear, or Bow from the rack",
-      "Hunt animals south (SPACE) & roast meat here",
+      "Press E near logs to sit & talk around the fire",
+      "Grab a Torch, Spear, or Bow from the tool rack",
+      "Explore SW Temple Ruins & SE Shifting Cave Dungeon",
     ],
   });
 
-  return { campfireLight, flameGroup };
+  return { campfireLight, flameGroup, fireflies, dragonflies };
 }
 
-/** Pure 3D low-poly forest animal mesh (no floating HTML tags!). */
+/**
+ * South-West Ancient Stepwell & Temple Monument Ruins (`x = -48, z = +138`):
+ * Sunken stone courtyard, corbel-arch pillars, broken obelisks, and the glowing
+ * Sun Altar that grants +30 Energy and whispers the active Sanctum Idol rune hint!
+ */
+function addAncientMonumentRuins(scene: THREE.Scene, colliders: Colliders) {
+  const cx = ANCIENT_RUINS.x;
+  const cz = ANCIENT_RUINS.z;
+  const g = new THREE.Group();
+  const stoneMat = standard(PALETTE.ruinStone);
+  const mossyMat = standard("#4d7c5b");
+  const goldMat = standard("#f59e0b", { emissive: "#d97706", emissiveIntensity: 1.1 });
+
+  // Outer stepwell platform & inner sunken floor
+  const outerPlatform = new THREE.Mesh(new THREE.BoxGeometry(28, 0.45, 28), stoneMat);
+  outerPlatform.position.set(cx, 0.22, cz);
+  outerPlatform.receiveShadow = true;
+  g.add(outerPlatform);
+
+  const innerCourtyard = new THREE.Mesh(new THREE.BoxGeometry(18, 0.55, 18), mossyMat);
+  innerCourtyard.position.set(cx, 0.28, cz);
+  innerCourtyard.receiveShadow = true;
+  g.add(innerCourtyard);
+
+  // 8 Ancient Corbel-Arch Pillars around the courtyard perimeter
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    const px = cx + Math.cos(a) * 11.2;
+    const pz = cz + Math.sin(a) * 11.2;
+    const h = i % 3 === 0 ? 3.2 : 5.6;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.82, h, 8), stoneMat);
+    pillar.position.set(px, h / 2, pz);
+    pillar.castShadow = true;
+    g.add(pillar);
+    colliders.circles.push({ x: px, z: pz, r: 0.9 });
+
+    if (h > 4) {
+      const capital = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.55, 2.1), mossyMat);
+      capital.position.set(px, h + 0.25, pz);
+      g.add(capital);
+    }
+  }
+
+  // Central Glowing Sun Altar
+  const altarBase = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.3, 1.1, 8), stoneMat);
+  altarBase.position.set(cx, 0.55, cz);
+  g.add(altarBase);
+
+  const sunOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), goldMat);
+  sunOrb.position.set(cx, 2.1, cz);
+  g.add(sunOrb);
+
+  const sunAltarRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.5, 2.85, 24),
+    new THREE.MeshBasicMaterial({ color: "#fbbf24", side: THREE.DoubleSide }),
+  );
+  sunAltarRing.rotation.x = -Math.PI / 2;
+  sunAltarRing.position.set(cx, 0.58, cz);
+  g.add(sunAltarRing);
+
+  const altarLight = new THREE.PointLight("#fbbf24", 3.5, 18, 1.4);
+  altarLight.position.set(cx, 2.8, cz);
+  g.add(altarLight);
+
+  colliders.circles.push({ x: cx, z: cz, r: 1.9 });
+
+  scene.add(g);
+
+  createNoticeBoard(scene, colliders, {
+    x: cx + 9.5,
+    z: cz - 14.5,
+    yaw: Math.PI,
+    title: "ANCIENT SUN RUINS",
+    lines: [
+      "Step to the Sun Altar & press E for +30 Energy",
+      "Reveals which Sanctum Idol unlocks the Cave Vault",
+      "Watch out for venomous temple vipers in the grass",
+    ],
+  });
+
+  return { sunAltarRing };
+}
+
+/**
+ * South-East Mountain Range & 90m Shifting Booby-Trap Cave Dungeon (`x = +48, z = +118..+206`):
+ * Dynamically shifts its labyrinth doors, pressure plates, pendulum speed, rolling boulder,
+ * and Sanctum floor rune as players make decisions inside!
+ */
+function addShiftingCaveDungeon(scene: THREE.Scene, colliders: Colliders) {
+  const cx = CAVE_DUNGEON.centerX;
+  const startZ = CAVE_DUNGEON.startZ;
+  const endZ = CAVE_DUNGEON.endZ;
+  const hw = CAVE_DUNGEON.halfW;
+  const len = endZ - startZ;
+  const midZ = (startZ + endZ) / 2;
+
+  const g = new THREE.Group();
+  const caveMat = standard(PALETTE.caveStone, { roughness: 0.95 });
+  const mountainMat = standard(PALETTE.mountainRock, { roughness: 0.92 });
+
+  // Towering Mountain Range enclosing the 90m Cave Tunnel
+  const mountainPeaks: Array<[number, number, number, number]> = [
+    [cx - 17, 130, 16, 24],
+    [cx + 17, 130, 16, 24],
+    [cx - 18, 155, 18, 28],
+    [cx + 18, 155, 18, 28],
+    [cx - 18, 182, 18, 30],
+    [cx + 18, 182, 18, 30],
+    [cx, 212, 26, 34],
+  ];
+  for (const [mx, mz, rad, h] of mountainPeaks) {
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(rad, h, 7), mountainMat);
+    peak.position.set(mx, h * 0.46, mz);
+    peak.castShadow = peak.receiveShadow = true;
+    g.add(peak);
+  }
+
+  // Cave Floor & Dark Stone Ceiling
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 + 4, len + 6), standard("#18181b"));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(cx, 0.025, midZ);
+  floor.receiveShadow = true;
+  g.add(floor);
+
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 3, 1.8, len), caveMat);
+  ceiling.position.set(cx, 6.4, midZ);
+  ceiling.castShadow = true;
+  g.add(ceiling);
+
+  // Outer Left & Right Cave Walls (with collision boxes) + Back Wall
+  for (const side of [-1, 1]) {
+    const wallX = cx + side * (hw + 1.0);
+    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 6.2, len), caveMat);
+    sideWall.position.set(wallX, 3.1, midZ);
+    sideWall.castShadow = sideWall.receiveShadow = true;
+    g.add(sideWall);
+    colliders.boxes.push({ x: wallX, z: midZ, hw: 0.95, hd: len / 2 });
+  }
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 3, 6.2, 1.8), caveMat);
+  backWall.position.set(cx, 3.1, endZ + 1.0);
+  g.add(backWall);
+  colliders.boxes.push({ x: cx, z: endZ + 1.0, hw: hw + 1.5, hd: 0.95 });
+
+  // Glowing Torch Sconces along the Cave Interior
+  for (let z = startZ + 6; z <= endZ - 4; z += 14) {
+    for (const side of [-1, 1]) {
+      const torchOrb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.24, 8, 8),
+        standard("#fb923c", { emissive: "#f97316", emissiveIntensity: 1.8 }),
+      );
+      torchOrb.position.set(cx + side * (hw - 0.2), 3.4, z);
+      g.add(torchOrb);
+    }
+    const caveLight = new THREE.PointLight("#f97316", 2.4, 18, 1.5);
+    caveLight.position.set(cx, 4.2, z);
+    g.add(caveLight);
+  }
+
+  // ---- CHAMBER 1 (z = 128): Two Glowing Decision Pedestals ------------------
+  const pedLeft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.65, 0.85, 1.3, 8),
+    standard("#ef4444", { emissive: "#dc2626", emissiveIntensity: 1.1 }),
+  );
+  pedLeft.position.set(cx - 3.2, 0.65, CAVE_DUNGEON.decision1Z);
+  const pedRight = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.65, 0.85, 1.3, 8),
+    standard("#a855f7", { emissive: "#9333ea", emissiveIntensity: 1.1 }),
+  );
+  pedRight.position.set(cx + 3.2, 0.65, CAVE_DUNGEON.decision1Z);
+  g.add(pedLeft, pedRight);
+
+  // ---- CHAMBER 2 (z = 138..158): Shifting Labyrinth Divider, Sliding Doors & Pressure Plates
+  const dividerWall = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.6, 20), standard("#3f3f46"));
+  dividerWall.position.set(cx, 2.8, 148);
+  g.add(dividerWall);
+  colliders.boxes.push({ x: cx, z: 148, hw: 0.5, hd: 10 });
+
+  const doorMat = standard("#52525b", { emissive: "#27272a", emissiveIntensity: 0.3 });
+  const leftSlidingDoor = new THREE.Mesh(new THREE.BoxGeometry(7.2, 5.2, 0.9), doorMat);
+  leftSlidingDoor.position.set(cx - 4.2, 2.6, CAVE_DUNGEON.labyrinthStartZ);
+  const rightSlidingDoor = new THREE.Mesh(new THREE.BoxGeometry(7.2, 5.2, 0.9), doorMat);
+  rightSlidingDoor.position.set(cx + 4.2, 2.6, CAVE_DUNGEON.labyrinthStartZ);
+  g.add(leftSlidingDoor, rightSlidingDoor);
+
+  // 3 rows of Pressure Plates in both Left & Right corridors (z = 142, 148, 154)
+  const trapMat = standard("#ef4444", { emissive: "#dc2626", emissiveIntensity: 0.9 });
+  const safeMat = standard("#22c55e", { emissive: "#15803d", emissiveIntensity: 0.6 });
+  const plateRows = [142, 148, 154];
+  const platePairs: Array<{ inner: THREE.Mesh; outer: THREE.Mesh; rowIdx: number }> = [];
+
+  for (const corridorCenter of [cx - 3.6, cx + 3.6]) {
+    plateRows.forEach((pz, rIdx) => {
+      const innerPlate = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 1.9), trapMat);
+      innerPlate.position.set(corridorCenter + 1.15, 0.08, pz);
+      const outerPlate = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 1.9), safeMat);
+      outerPlate.position.set(corridorCenter - 1.15, 0.08, pz);
+      g.add(innerPlate, outerPlate);
+      platePairs.push({ inner: innerPlate, outer: outerPlate, rowIdx: rIdx });
+    });
+  }
+
+  // ---- CHAMBER 3 (z = 160..185): Crossroads Totem, 3 Swinging Pendulum Axes & Rolling Boulder
+  const crossroadsTotem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.7, 2.1, 8),
+    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.0 }),
+  );
+  crossroadsTotem.position.set(cx, 1.05, CAVE_DUNGEON.decision2Z);
+  g.add(crossroadsTotem);
+
+  const bladeMat = standard("#e2e8f0", { emissive: "#94a3b8", emissiveIntensity: 0.5, metalness: 0.4 });
+  const pendulumPivots: THREE.Group[] = [];
+  for (const bz of [167, 173, 179]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(cx, 5.4, bz);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 4.2, 8), standard("#52525b"));
+    rod.position.y = -2.1;
+    const axeBlade = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 0.22), bladeMat);
+    axeBlade.position.y = -4.1;
+    pivot.add(rod, axeBlade);
+    g.add(pivot);
+    pendulumPivots.push(pivot);
+  }
+
+  const boulderMesh = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(1.75, 1),
+    standard("#78716c", { emissive: "#44403c", emissiveIntensity: 0.3 }),
+  );
+  boulderMesh.position.set(cx, 1.75, CAVE_DUNGEON.gauntletEndZ);
+  boulderMesh.castShadow = true;
+  g.add(boulderMesh);
+
+  // ---- CHAMBER 4 (z = 186..206): Judgement Sanctum Rune, 3 Idols, Vault Gate & Treasure Chest
+  const sanctumRuneMat = new THREE.MeshBasicMaterial({ color: "#ef4444", side: THREE.DoubleSide });
+  const sanctumRuneRing = new THREE.Mesh(new THREE.RingGeometry(2.4, 3.0, 32), sanctumRuneMat);
+  sanctumRuneRing.rotation.x = -Math.PI / 2;
+  sanctumRuneRing.position.set(cx, 0.04, 191.5);
+  g.add(sanctumRuneRing);
+
+  const idolSpecs: Array<[number, string]> = [
+    [cx - 3.6, "#ef4444"], // 1: Crimson Idol
+    [cx, "#10b981"],       // 2: Emerald Idol
+    [cx + 3.6, "#f59e0b"], // 3: Golden Idol
+  ];
+  for (const [ix, col] of idolSpecs) {
+    const ped = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), standard("#3f3f46"));
+    ped.position.set(ix, 0.6, CAVE_DUNGEON.sanctumZ);
+    const statue = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.65, 0),
+      standard(col, { emissive: col, emissiveIntensity: 1.2 }),
+    );
+    statue.position.set(ix, 1.65, CAVE_DUNGEON.sanctumZ);
+    g.add(ped, statue);
+  }
+
+  const vaultGate = new THREE.Mesh(
+    new THREE.BoxGeometry(hw * 2, 5.6, 0.8),
+    standard("#b45309", { emissive: "#78350f", emissiveIntensity: 0.4 }),
+  );
+  vaultGate.position.set(cx, 2.8, 199.5);
+  g.add(vaultGate);
+
+  const treasureChest = new THREE.Mesh(
+    new THREE.BoxGeometry(2.2, 1.4, 1.5),
+    standard("#fbbf24", { emissive: "#f59e0b", emissiveIntensity: 1.4 }),
+  );
+  treasureChest.position.set(cx, 0.7, CAVE_DUNGEON.vaultZ);
+  g.add(treasureChest);
+
+  scene.add(g);
+
+  createNoticeBoard(scene, colliders, {
+    x: cx - 7.5,
+    z: startZ - 3.2,
+    yaw: Math.PI,
+    title: "SHIFTING CAVE DUNGEON",
+    lines: [
+      "Equip a 🔥 Torch! Decisions inside shift the walls",
+      "Dodge red pressure plates, swinging axes & boulders",
+      "Match the Sanctum floor rune color to unlock the Vault",
+    ],
+  });
+
+  return {
+    update(
+      variant: number,
+      choice1: number,
+      choice2: number,
+      gateOpen: number,
+      boulderZ: number,
+      boulderLaneX: number,
+      nowMs: number,
+    ) {
+      // 1. Slide Chamber 2 Labyrinth Doors based on Decision 1 (1 = Left Open, 2 = Right Open)
+      const leftTargetY = choice1 === 1 ? 7.6 : 2.6;
+      const rightTargetY = choice1 === 2 ? 7.6 : 2.6;
+      leftSlidingDoor.position.y += (leftTargetY - leftSlidingDoor.position.y) * 0.15;
+      rightSlidingDoor.position.y += (rightTargetY - rightSlidingDoor.position.y) * 0.15;
+
+      // 2. Flip Pressure Plate colors based on dungeonVariant
+      for (const pair of platePairs) {
+        const trapOnInner = (pair.rowIdx + variant) % 2 === 0;
+        pair.inner.material = trapOnInner ? trapMat : safeMat;
+        pair.outer.material = trapOnInner ? safeMat : trapMat;
+      }
+
+      // 3. Animate Swinging Pendulum Axes & Rolling Boulder
+      const tSec = nowMs / 1000;
+      const pendulumSpeed = choice2 === 1 ? 2.6 : 1.85;
+      pendulumPivots.forEach((pivot, idx) => {
+        pivot.rotation.z = Math.sin(tSec * pendulumSpeed + idx * 2.1) * 0.95;
+      });
+
+      if (Number.isFinite(boulderZ) && Number.isFinite(boulderLaneX)) {
+        boulderMesh.position.x += (boulderLaneX - boulderMesh.position.x) * 0.35;
+        boulderMesh.position.z = boulderZ;
+        boulderMesh.rotation.x -= 0.18;
+      }
+
+      // 4. Update Sanctum Floor Rune hint color (shows which Idol is real for current variant!)
+      const runeColors = ["#ef4444", "#10b981", "#f59e0b"];
+      sanctumRuneMat.color.set(runeColors[variant % 3] ?? "#ef4444");
+      sanctumRuneRing.rotation.z = tSec * 0.8;
+
+      // 5. Slide Vault Gate open when solved
+      const gateTargetY = gateOpen === 1 ? 7.8 : 2.8;
+      vaultGate.position.y += (gateTargetY - vaultGate.position.y) * 0.12;
+      treasureChest.rotation.y = Math.sin(tSec * 2) * 0.15;
+    },
+  };
+}
+
+/** Pure 3D low-poly forest animal or multi-segment slithering snake mesh! */
 function createAnimalMesh(species: string): AnimalMeshEntry {
   const group = new THREE.Group();
+
+  if (species === "snake") {
+    const snakeGreen = standard("#16a34a", { emissive: "#14532d", emissiveIntensity: 0.35 });
+    const bellyMat = standard("#bef264");
+    const eyeMat = standard("#facc15", { emissive: "#eab308", emissiveIntensity: 1.2 });
+    const tongueMat = standard("#ef4444", { emissive: "#dc2626", emissiveIntensity: 0.9 });
+    const segments: THREE.Mesh[] = [];
+
+    // Cobra hood & head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.24, 0.38), snakeGreen);
+    head.position.set(0, 0.22, 0.65);
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.32, 0.16), bellyMat);
+    hood.position.set(0, 0.22, 0.52);
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), eyeMat);
+    eyeL.position.set(-0.12, 0.28, 0.78);
+    const eyeR = eyeL.clone();
+    eyeR.position.x = 0.12;
+    const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.02, 0.24), tongueMat);
+    tongue.position.set(0, 0.18, 0.92);
+    group.add(head, hood, eyeL, eyeR, tongue);
+    segments.push(head);
+
+    for (let i = 0; i < 6; i++) {
+      const r = 0.16 * (1 - i * 0.11);
+      const seg = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 6), i % 2 === 0 ? snakeGreen : bellyMat);
+      seg.position.set(0, r, 0.35 - i * 0.26);
+      seg.castShadow = true;
+      group.add(seg);
+      segments.push(seg);
+    }
+
+    return {
+      group,
+      species,
+      segments,
+      targetX: 0,
+      targetZ: 95,
+      targetRot: 0,
+    };
+  }
+
   const color =
     species === "rabbit"
       ? "#f1f5f9"
@@ -983,8 +1475,9 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
 
   return {
     group,
+    species,
     targetX: 0,
-    targetZ: 75,
+    targetZ: 85,
     targetRot: 0,
   };
 }
@@ -1106,7 +1599,6 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
   colliders.boxes.push({ x: 0, z: -52.8, hw: 8.5, hd: 2.6 });
   scene.add(group);
 
-  // Physical 3D wooden Notice Board outside the Cinema Hall entrance
   createNoticeBoard(scene, colliders, {
     x: -6.8,
     z: -33.2,
@@ -1177,57 +1669,145 @@ function addBuildings(
   });
 }
 
+/**
+ * Dense, Multi-Species Forest & Undergrowth:
+ * - 5 tree varieties: Tall Pine/Spruce, Broad Oak Canopy, Twisted Jungle Banyan with hanging vines,
+ *   Weeping White Birch, and Fallen Mossy Logs.
+ * - Undergrowth plants: Ferns, Tall Reed Grass, Wild Berry Bushes, and Glowing Bioluminescent Mushrooms!
+ */
 function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
-  const rand = mulberry32(20261027);
-  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.28, 1.7, 7);
+  const rand = mulberry32(20261029);
+  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.3, 1.8, 7);
   const trunkMat = standard(PALETTE.trunk);
-  const leafGeos = [new THREE.ConeGeometry(1.5, 2.8, 7), new THREE.ConeGeometry(1.2, 2.3, 7)];
+  const birchMat = standard(PALETTE.birchTrunk);
+  const leafGeos = [
+    new THREE.ConeGeometry(1.55, 2.9, 7),
+    new THREE.ConeGeometry(1.25, 2.4, 7),
+    new THREE.DodecahedronGeometry(1.65, 1),
+  ];
   const leafMats = PALETTE.leaves.map((c) => standard(c));
-  const berryMat = standard("#e63946", { emissive: "#b91c1c", emissiveIntensity: 0.3 });
+  const vineMat = standard("#4d7c0f");
+  const berryMat = standard("#e63946", { emissive: "#b91c1c", emissiveIntensity: 0.35 });
+  const mushroomCapMat = standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.4 });
+  const mushroomPurpleMat = standard("#c084fc", { emissive: "#9333ea", emissiveIntensity: 1.4 });
+  const stemMat = standard("#f1f5f9");
 
   let placed = 0;
   let attempts = 0;
-  while (placed < 165 && attempts < 1400) {
+  while (placed < 340 && attempts < 2800) {
     attempts++;
-    const inSouthForest = placed >= 55;
-    const x = inSouthForest ? (rand() * 2 - 1) * 125 : (rand() * 2 - 1) * 95;
-    const z = inSouthForest ? 50 + rand() * 102 : (rand() * 2 - 1) * 85;
+    const inSouthForest = placed >= 48;
+    const x = inSouthForest ? (rand() * 2 - 1) * 145 : (rand() * 2 - 1) * 95;
+    const z = inSouthForest ? 42 + rand() * 155 : (rand() * 2 - 1) * 85;
 
     const distOrigin = Math.hypot(x, z);
     if (distOrigin < 18) continue;
     if (distOrigin > 27 && distOrigin < 36) continue;
-    if (Math.abs(x) < 5 && z > -40 && z < 48) continue;
+    // Keep main north-south trail to Campfire clear
+    if (Math.abs(x) < 4.8 && z > -40 && z < 78) continue;
     if (Math.abs(z) < 5 && Math.abs(x) < 70) continue;
     if (z < -30 && Math.abs(x) < 35) continue;
     if (Math.abs(x - FOOTBALL_STADIUM.centerX) < 26 && Math.abs(z) < 20) continue;
     if (Math.hypot(x - ARCADE_ZONE.centerX, z - ARCADE_ZONE.centerZ) < 17) continue;
-    if (Math.hypot(x - CAMPFIRE_BASE.x, z - CAMPFIRE_BASE.z) < 15) continue;
-    if (Math.abs(z - 108) < 7) continue;
+    if (Math.hypot(x - CAMPFIRE_BASE.x, z - CAMPFIRE_BASE.z) < 14.5) continue;
+    if (Math.hypot(x - ANCIENT_RUINS.x, z - ANCIENT_RUINS.z) < ANCIENT_RUINS.radius + 3) continue;
+    if (
+      Math.abs(x - CAVE_DUNGEON.centerX) < CAVE_DUNGEON.halfW + 14 &&
+      z > CAVE_DUNGEON.startZ - 10 &&
+      z < CAVE_DUNGEON.endZ + 12
+    ) {
+      continue;
+    }
+    if (Math.abs(z - 112) < 6.5) continue;
 
-    if (colliders.boxes.some((b) => Math.abs(x - b.x) < b.hw + 2.5 && Math.abs(z - b.z) < b.hd + 2.5)) continue;
-    if (colliders.circles.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 2.2)) continue;
+    if (colliders.boxes.some((b) => Math.abs(x - b.x) < b.hw + 2.2 && Math.abs(z - b.z) < b.hd + 2.2)) continue;
+    if (colliders.circles.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 1.6)) continue;
 
     const tree = new THREE.Group();
-    const scale = inSouthForest ? 0.95 + rand() * 0.95 : 0.8 + rand() * 0.65;
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.y = 0.85;
-    trunk.castShadow = true;
-    tree.add(trunk);
-    const leaves = new THREE.Mesh(leafGeos[placed % 2]!, leafMats[placed % leafMats.length]!);
-    leaves.position.y = 2.6;
-    leaves.castShadow = true;
-    tree.add(leaves);
-    const crown = new THREE.Mesh(leafGeos[1]!, leafMats[(placed + 1) % leafMats.length]!);
-    crown.position.y = 3.85;
-    crown.castShadow = true;
-    tree.add(crown);
+    const scale = inSouthForest ? 1.0 + rand() * 1.15 : 0.8 + rand() * 0.65;
+    const speciesRoll = inSouthForest ? placed % 5 : placed % 2;
 
-    if (inSouthForest && placed % 7 === 0) {
-      const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 1), leafMats[0]!);
-      bush.position.set(1.1, 0.35, 0.4);
-      const berry = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6), berryMat);
-      berry.position.set(1.1, 0.75, 0.55);
-      tree.add(bush, berry);
+    if (speciesRoll === 0) {
+      // 1. Tall Pine / Spruce
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 0.9;
+      trunk.castShadow = true;
+      const l1 = new THREE.Mesh(leafGeos[0]!, leafMats[placed % leafMats.length]!);
+      l1.position.y = 2.6;
+      l1.castShadow = true;
+      const l2 = new THREE.Mesh(leafGeos[1]!, leafMats[(placed + 1) % leafMats.length]!);
+      l2.position.y = 3.9;
+      l2.castShadow = true;
+      tree.add(trunk, l1, l2);
+    } else if (speciesRoll === 1) {
+      // 2. Broad Oak Canopy
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 0.9;
+      trunk.castShadow = true;
+      const canopy = new THREE.Mesh(leafGeos[2]!, leafMats[(placed + 2) % leafMats.length]!);
+      canopy.position.y = 2.9;
+      canopy.castShadow = true;
+      const subCanopy = new THREE.Mesh(leafGeos[2]!, leafMats[(placed + 3) % leafMats.length]!);
+      subCanopy.scale.setScalar(0.72);
+      subCanopy.position.set(0.85, 2.4, 0.4);
+      tree.add(trunk, canopy, subCanopy);
+    } else if (speciesRoll === 2) {
+      // 3. Twisted Jungle Banyan with Hanging Vines
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 2.2, 7), trunkMat);
+      trunk.position.y = 1.1;
+      trunk.castShadow = true;
+      const crown = new THREE.Mesh(leafGeos[2]!, leafMats[5]!);
+      crown.scale.set(1.35, 0.85, 1.35);
+      crown.position.y = 3.1;
+      crown.castShadow = true;
+      tree.add(trunk, crown);
+      for (const vx of [-0.9, 0.9]) {
+        const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5), vineMat);
+        vine.position.set(vx, 1.9, 0.5);
+        tree.add(vine);
+      }
+    } else if (speciesRoll === 3) {
+      // 4. White Weeping Birch
+      const trunk = new THREE.Mesh(trunkGeo, birchMat);
+      trunk.position.y = 0.9;
+      trunk.castShadow = true;
+      const crown = new THREE.Mesh(leafGeos[1]!, leafMats[4]!);
+      crown.position.y = 2.8;
+      crown.castShadow = true;
+      tree.add(trunk, crown);
+    } else {
+      // 5. Fallen Mossy Hollow Log + Glowing Mushrooms
+      const fallenLog = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 2.8, 8), trunkMat);
+      fallenLog.rotation.z = Math.PI / 2;
+      fallenLog.position.y = 0.3;
+      fallenLog.castShadow = true;
+      tree.add(fallenLog);
+    }
+
+    // Undergrowth Plants: Ferns, Berry Bushes & Bioluminescent Mushrooms
+    if (inSouthForest) {
+      if (placed % 4 === 0) {
+        const fern = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.75, 5), leafMats[2]!);
+        fern.position.set(0.95, 0.35, -0.5);
+        tree.add(fern);
+      }
+      if (placed % 6 === 0) {
+        const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 1), leafMats[0]!);
+        bush.position.set(1.1, 0.35, 0.4);
+        const berry = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), berryMat);
+        berry.position.set(1.1, 0.75, 0.55);
+        tree.add(bush, berry);
+      }
+      if (placed % 5 === 0) {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.28, 6), stemMat);
+        stem.position.set(-0.85, 0.14, 0.65);
+        const cap = new THREE.Mesh(
+          new THREE.ConeGeometry(0.22, 0.18, 7),
+          placed % 10 === 0 ? mushroomPurpleMat : mushroomCapMat,
+        );
+        cap.position.set(-0.85, 0.3, 0.65);
+        tree.add(stem, cap);
+      }
     }
 
     tree.scale.setScalar(scale);
@@ -1235,7 +1815,7 @@ function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
     tree.position.set(x, 0, z);
     scene.add(tree);
 
-    colliders.circles.push({ x, z, r: 0.35 * scale });
+    colliders.circles.push({ x, z, r: 0.36 * scale });
     placed++;
   }
 }

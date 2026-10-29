@@ -22,8 +22,8 @@ const health = createEndpoint("/health", { method: "GET" }, async () => {
  */
 export function createWorldServer() {
   return defineServer({
-    // WebRTC offers can exceed the default 4 KB message limit.
-    transport: new WebSocketTransport({ maxPayload: 16 * 1024 }),
+    // Multi-peer WebRTC offers and ICE bursts can exceed 16 KB.
+    transport: new WebSocketTransport({ maxPayload: 64 * 1024 }),
     rooms: {
       [ROOMS.hub]: defineRoom(HubRoom),
     },
