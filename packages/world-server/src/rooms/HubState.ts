@@ -21,6 +21,8 @@ export const Player = schema(
     rawMeat: t.uint8().default(0),
     cookedMeat: t.uint8().default(0),
     energy: t.uint8().default(80),
+    /** 1..3 when chomped head-first inside Mimic Chest #1..#3, 0 when free. */
+    mimicTrapped: t.uint8().default(0),
   },
   "Player",
 );
@@ -65,18 +67,20 @@ export const HubState = schema(
     scoreBlue: t.uint8().default(0),
     /** South Forest roaming wildlife (including slithering snakes). */
     animals: t.map(ForestAnimal),
-    /** Shifting Cave Dungeon state (changes dynamically as players make decisions). */
-    dungeonVariant: t.uint8().default(0),
-    /** Chamber 1 Decision: 1 = Left Corridor (Trial of Blades), 2 = Right Corridor (Trial of Shadows). */
-    dungeonChoice1: t.uint8().default(1),
-    /** Chamber 3 Decision: 1 = Pendulum Speed Mode, 2 = Rolling Boulder Surge Mode. */
-    dungeonChoice2: t.uint8().default(1),
-    /** 1 when the Sanctum Treasure Vault gate is unlocked, 0 when sealed. */
-    dungeonGateOpen: t.uint8().default(0),
-    /** Current Z coordinate of the rolling boulder trap in Chamber 3 (162..185). */
-    boulderZ: t.float32().default(164),
-    /** Current X lane of the rolling boulder (-3.2, 0, or +3.2 relative to cave center). */
-    boulderLaneX: t.float32().default(48),
+    /** Frieren Brick Dungeon state: 1 = West Brick Wing open, 2 = East Brick Wing open. */
+    dungeonWing: t.uint8().default(1),
+    /** Seed (0..2) controlling which floor bricks are cracked and which Chest holds the Grimoire Key. */
+    dungeonSeed: t.uint8().default(0),
+    /** 1 when the Grimoire Key chest has been found, sliding open the secret brick wall at z = 174. */
+    grimoireFound: t.uint8().default(0),
+    /** 1 when Left Iron Portcullis Gate at z = 188 is raised. */
+    gateLeftOpen: t.uint8().default(0),
+    /** 1 when Right Iron Portcullis Gate at z = 188 is raised. */
+    gateRightOpen: t.uint8().default(0),
+    /** 1 when the King's Tomb Golden Vault at z = 203 is unlocked. */
+    vaultUnlocked: t.uint8().default(0),
+    /** Current Z coordinate of the hallway arrow-slit volley sweeping down Hallway 1. */
+    arrowVolleyZ: t.float32().default(144),
   },
   "HubState",
 );

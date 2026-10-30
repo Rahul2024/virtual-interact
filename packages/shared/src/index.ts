@@ -7,7 +7,7 @@ export const REPO_URL = "https://github.com/Rahul2024/virtual-interact";
 
 /**
  * Expanded World: 460m × 460m (-230 to +230 on X and Z) to fit all city
- * districts plus the Deep Southern Forest, Ancient Ruins, and 90m Shifting Cave Dungeon.
+ * districts plus the Deep Southern Forest and the Frieren-style Brick Dungeon.
  */
 export const WORLD = {
   size: 460,
@@ -44,7 +44,7 @@ export const ANIM = {
 } as const;
 export type Anim = (typeof ANIM)[keyof typeof ANIM];
 
-/** Equipped hand tool for Forest Survival & Night Exploration. */
+/** Equipped hand tool for Forest Survival & Night/Dungeon Exploration. */
 export const TOOL = {
   none: 0,
   torch: 1,
@@ -188,41 +188,36 @@ export function isInForestWilderness(x: number, z: number): boolean {
   return z >= 38 && Math.abs(x) <= 210;
 }
 
-/** South-West Ancient Stepwell & Temple Monument Ruins (`x = -48, z = +138`). */
-export const ANCIENT_RUINS = {
-  x: -48,
-  z: 138,
-  radius: 18,
-} as const;
-
-export function isInAncientRuins(x: number, z: number): boolean {
-  return Math.hypot(x - ANCIENT_RUINS.x, z - ANCIENT_RUINS.z) <= ANCIENT_RUINS.radius;
-}
-
 /**
- * South-East Mountain Range & 90m Shifting Booby-Trap Cave Dungeon
- * (`x = +48, z = +118..+206`).
+ * Frieren-Style Square Stone-Brick Dungeon ("Ruins of the King's Tomb")
+ * located across the Southern River Bridge at `x = 0, z = +120..+208`:
+ * - Hallway 1 (`z = 120..146`): Square stone-brick corridor with cracked-slab traps & arrow slits
+ * - Junction 1 (`z = 146..152`): Twin Iron Levers that shift the brick maze walls (West vs East Wing)
+ * - Chamber 2 (`z = 152..174`): Frieren's 3-Chest Mimic Alcove Room (1 Grimoire Key, 2 Mimics!)
+ * - Hallway 3 (`z = 174..196`): Parallel Iron-Bar Corridors with loose-brick co-op gate switches
+ * - Sanctum 4 (`z = 196..208`): The King's Tomb Golden Vault
  */
-export const CAVE_DUNGEON = {
-  centerX: 48,
-  startZ: 118,
-  endZ: 206,
-  halfW: 8.5,
-  decision1Z: 128,
-  labyrinthStartZ: 138,
-  labyrinthEndZ: 158,
-  decision2Z: 161,
-  gauntletStartZ: 164,
-  gauntletEndZ: 185,
-  sanctumZ: 196,
-  vaultZ: 203,
+export const BRICK_DUNGEON = {
+  centerX: 0,
+  startZ: 120,
+  endZ: 208,
+  halfW: 9.0,
+  hall1EndZ: 146,
+  junctionZ: 148,
+  mimicRoomStartZ: 152,
+  mimicRoomEndZ: 174,
+  secretWallZ: 174,
+  parallelStartZ: 175,
+  gateZ: 188,
+  sanctumStartZ: 194,
+  vaultChestZ: 203,
 } as const;
 
-export function isInCaveDungeon(x: number, z: number): boolean {
+export function isInBrickDungeon(x: number, z: number): boolean {
   return (
-    Math.abs(x - CAVE_DUNGEON.centerX) <= CAVE_DUNGEON.halfW + 3 &&
-    z >= CAVE_DUNGEON.startZ - 4 &&
-    z <= CAVE_DUNGEON.endZ + 4
+    Math.abs(x - BRICK_DUNGEON.centerX) <= BRICK_DUNGEON.halfW + 3 &&
+    z >= BRICK_DUNGEON.startZ - 3 &&
+    z <= BRICK_DUNGEON.endZ + 3
   );
 }
 
@@ -362,7 +357,7 @@ export interface ArcadeStateBroadcast {
   triviaScores: Record<string, number>;
 }
 
-// ---- South Campfire, Forest Hunting & Shifting Dungeon Messages ------------
+// ---- South Campfire, Forest Hunting & Frieren Brick Dungeon Messages -------
 
 export const FOREST_MSG = {
   equipTool: "forest:tool",
@@ -370,8 +365,7 @@ export const FOREST_MSG = {
   forageBerry: "forest:berry",
   cookMeat: "forest:cook",
   eatMeat: "forest:eat",
-  ruinsBlessing: "forest:ruins-blessing",
-  dungeonDecision: "forest:dungeon-decision",
+  dungeonAction: "forest:dungeon-action",
 } as const;
 
 export interface ForestEquipMessage {
@@ -382,9 +376,20 @@ export interface ForestAttackMessage {
   animalId: string;
 }
 
-export interface DungeonDecisionMessage {
-  stage: 1 | 2 | 3;
-  choice: 1 | 2 | 3;
+export type DungeonActionType =
+  | "lever1"
+  | "lever2"
+  | "chest1"
+  | "chest2"
+  | "chest3"
+  | "rescue"
+  | "struggle"
+  | "switchL"
+  | "switchR"
+  | "vault";
+
+export interface DungeonActionMessage {
+  action: DungeonActionType;
 }
 
 export type AnimalSpecies = "rabbit" | "deer" | "boar" | "wolf" | "snake";

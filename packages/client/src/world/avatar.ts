@@ -26,6 +26,7 @@ export class Avatar {
   seatId = -1;
   tool: ToolId = TOOL.none;
   team: TeamId = TEAM.none;
+  mimicTrapped = 0;
 
   private body: THREE.Mesh;
   private headGroup: THREE.Group;
@@ -272,6 +273,27 @@ export class Avatar {
 
     this.popcornTub.visible = this.anim === ANIM.popcorn || isCinemaSeat;
     this.setTool(this.tool);
+    if (this.tool === TOOL.torch) {
+      this.torchLight.intensity = 6.2 + Math.sin(t * 14) * 0.65 + Math.cos(t * 23) * 0.35;
+      this.torchLight.distance = 24;
+    }
+
+    // Frieren-style Mimic Chest Trap! Avatar is pitched head-first into the chest with legs kicking wildly!
+    if (this.mimicTrapped > 0) {
+      this.body.position.y = 0.72;
+      this.body.rotation.x = Math.PI * 0.58;
+      this.headGroup.position.y = 0.42;
+      this.legL.position.y = 1.05;
+      this.legR.position.y = 1.05;
+      this.legL.rotation.x = Math.PI * 0.48 + Math.sin(t * 19) * 0.55;
+      this.legR.rotation.x = Math.PI * 0.48 - Math.sin(t * 19) * 0.55;
+      this.armL.position.y = 0.65;
+      this.armR.position.y = 0.65;
+      this.armL.rotation.x = -Math.PI * 0.4;
+      this.armR.rotation.x = -Math.PI * 0.4;
+      return;
+    }
+    this.body.rotation.x = 0;
 
     if (isSeated) {
       this.body.position.y = 0.86;
