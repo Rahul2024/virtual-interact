@@ -11,6 +11,7 @@ import {
   OPEN_MIC_STAGE,
   SOCIAL_ZONE,
   WORLD,
+  getDungeonFloorY,
   getIndianHourFloat,
 } from "@vi/shared";
 import { Colliders } from "./collision";
@@ -50,6 +51,8 @@ export interface World {
     vaultUnlocked: number,
     arrowVolleyZ: number,
     mimicTrapped: number,
+    websBurned: number,
+    fireBoulderZ: number,
     nowMs: number,
   ): void;
   syncAnimals(animals: AnimalRenderState[]): void;
@@ -404,6 +407,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       vaultUnlocked: number,
       arrowVolleyZ: number,
       mimicTrapped: number,
+      websBurned: number,
+      fireBoulderZ: number,
       nowMs: number,
     ) {
       dungeonRig.update(
@@ -415,6 +420,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         vaultUnlocked,
         arrowVolleyZ,
         mimicTrapped,
+        websBurned,
+        fireBoulderZ,
         nowMs,
       );
     },
@@ -424,7 +431,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         let entry = animalEntries.get(a.id);
         if (!entry) {
           entry = createAnimalMesh(a.species);
-          entry.group.position.set(a.x, 0, a.z);
+          entry.group.position.set(a.x, getDungeonFloorY(a.x, a.z), a.z);
           scene.add(entry.group);
           animalEntries.set(a.id, entry);
         }
@@ -438,14 +445,21 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         entry.group.position.x += (entry.targetX - entry.group.position.x) * 0.18;
         entry.group.position.z += (entry.targetZ - entry.group.position.z) * 0.18;
         entry.group.rotation.y = entry.targetRot;
+        const baseY = getDungeonFloorY(entry.group.position.x, entry.group.position.z);
 
         if (entry.species === "snake" && entry.segments) {
-          entry.group.position.y = 0.02;
+          entry.group.position.y = baseY + 0.02;
           entry.segments.forEach((seg, idx) => {
             seg.position.x = Math.sin(now * 0.011 + idx * 0.85 + entry.targetX) * 0.16;
           });
+        } else if (entry.species === "cerberus" && entry.segments) {
+          entry.group.position.y = baseY + Math.abs(Math.sin(now * 0.006)) * 0.18;
+          entry.segments.forEach((headMesh, idx) => {
+            headMesh.rotation.y = Math.sin(now * 0.005 + idx * 1.4) * 0.25;
+            headMesh.rotation.x = Math.cos(now * 0.007 + idx * 1.1) * 0.14;
+          });
         } else {
-          entry.group.position.y = Math.abs(Math.sin(now * 0.008 + entry.targetX)) * 0.12;
+          entry.group.position.y = baseY + Math.abs(Math.sin(now * 0.008 + entry.targetX)) * 0.12;
         }
       }
     },
@@ -1197,31 +1211,56 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
 
 /**
  * Frieren: Beyond Journey's End–Style Square Stone-Brick Hallway Dungeon ("Ruins of the King's Tomb"):
- * Located at `x = 0, z = +120..+208` across the central forest river bridge.
- * Built with custom 3D bump-mapped PBR stone-brick walls, vaulted ceiling ribs, recessed wall niches,
- * cracked floor brick booby traps, shifting brick T-junction walls, 3 ornate Mimic/Grimoire chests,
- * a secret sliding brick bookcase wall, parallel iron-bar corridors with loose brick switches,
- * rising iron portcullis gates, and the King's Tomb Golden Vault!
+ * Located at `x = -22..+22, z = +120..+480` across the central forest river bridge.
+ * Built as a 360-meter-long, continuous ascending 4-Floor Stone-Brick Hallway Dungeon
+ * (`y = 0m -> +6m -> +12m -> +18m`) themed after the 3 Elemental Heads of the Final Boss:
+ * - Floor 1 (`z = 120..210`, `y = 0m` — ❄️ Ice Head): Flooded ice-water canal, slippery ice stepping stones,
+ *   West/East raised brick side-walkways, waterfall wall grates, frost arrow volleys, T-junction levers,
+ *   3 Mimic/Grimoire chests, and the secret sliding brick bookcase wall.
+ * - Floor 2 (`z = 226..316`, `y = +6m` — 🔥 Fire Head): Crimson-ember hallway with magma trenches,
+ *   3 sticky Cinder-Spider web curtains (burnable with a Torch), swinging molten pendulum blades,
+ *   and a rolling fire-boulder.
+ * - Floor 3 (`z = 332..404`, `y = +12m` — 🌑 Shadow Head): Shadow-mana chasm bridge & outer catwalks,
+ *   parallel iron-bar corridors, loose brick switches, portcullis gates, and prowling Shadow Wolves.
+ * - Floor 4 (`z = 420..480`, `y = +18m` — 👑 3-Faced Dire Wolf Sanctum): Vaulted boss arena,
+ *   Golden Royal Vault, and Waterfall Escape Slide back to Floor 1.
  */
 function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   const cx = BRICK_DUNGEON.centerX;
   const startZ = BRICK_DUNGEON.startZ;
   const endZ = BRICK_DUNGEON.endZ;
   const hw = BRICK_DUNGEON.halfW;
-  const len = endZ - startZ;
-  const midZ = (startZ + endZ) / 2;
+  const bossHw = BRICK_DUNGEON.bossHalfW;
 
   const g = new THREE.Group();
 
   // PBR Stone-Brick & Flagstone Materials with 3D Bump Map relief
-  const wallBrickMat = createBrickPBRMaterial({ repeatX: 16, repeatY: 3, mossy: true, bumpScale: 0.095 });
+  const wallBrickMat = createBrickPBRMaterial({ repeatX: 28, repeatY: 3, mossy: true, bumpScale: 0.095 });
   const shortWallBrickMat = createBrickPBRMaterial({ repeatX: 4, repeatY: 3, mossy: true, bumpScale: 0.09 });
-  const floorFlagstoneMat = createBrickPBRMaterial({
-    repeatX: 6,
+  const iceFloorMat = createBrickPBRMaterial({
+    repeatX: 8,
     repeatY: 22,
-    baseColor: "#333946",
+    baseColor: "#2c3d4f",
     mossy: true,
     bumpScale: 0.065,
+  });
+  const fireFloorMat = createBrickPBRMaterial({
+    repeatX: 8,
+    repeatY: 22,
+    baseColor: "#422826",
+    bumpScale: 0.075,
+  });
+  const shadowFloorMat = createBrickPBRMaterial({
+    repeatX: 8,
+    repeatY: 18,
+    baseColor: "#28213b",
+    bumpScale: 0.07,
+  });
+  const bossFloorMat = createBrickPBRMaterial({
+    repeatX: 10,
+    repeatY: 16,
+    baseColor: "#332940",
+    bumpScale: 0.08,
   });
   const intactSlabMat = createBrickPBRMaterial({
     repeatX: 2,
@@ -1253,193 +1292,266 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
     roughness: 0.72,
     metalness: 0.1,
   });
+  const iceCrystalMat = standard("#7dd3fc", {
+    emissive: "#0284c7",
+    emissiveIntensity: 0.75,
+    roughness: 0.18,
+  });
+  const magmaMat = standard("#f97316", {
+    emissive: "#ea580c",
+    emissiveIntensity: 1.6,
+    roughness: 0.35,
+  });
+  const shadowVoidMat = standard("#090514", {
+    emissive: "#3b0764",
+    emissiveIntensity: 0.45,
+    roughness: 0.95,
+  });
 
-  // 1. Grand Square Stone-Brick Entrance Archway at z = 120
+  // Helper to build a continuous stone-brick hallway enclosure for a floor segment
+  const addHallwaySegment = (
+    z0: number,
+    z1: number,
+    y0: number,
+    segHalfW: number,
+    floorMat: THREE.Material,
+    sconceColor: string,
+    hasFloor = true,
+  ) => {
+    const segLen = z1 - z0;
+    const segMidZ = (z0 + z1) / 2;
+
+    if (hasFloor) {
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(segHalfW * 2 + 2, segLen + 1.5), floorMat);
+      fl.rotation.x = -Math.PI / 2;
+      fl.position.set(cx, y0 + 0.028, segMidZ);
+      fl.receiveShadow = true;
+      g.add(fl);
+    }
+
+    const ceil = new THREE.Mesh(new THREE.BoxGeometry(segHalfW * 2 + 2.8, 1.2, segLen + 1.5), wallBrickMat);
+    ceil.position.set(cx, y0 + 6.9, segMidZ);
+    ceil.castShadow = true;
+    g.add(ceil);
+
+    for (const side of [-1, 1]) {
+      const wallX = cx + side * (segHalfW + 0.9);
+      const outerWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 7.0, segLen + 1.5), wallBrickMat);
+      outerWall.position.set(wallX, y0 + 3.5, segMidZ);
+      outerWall.castShadow = outerWall.receiveShadow = true;
+      g.add(outerWall);
+      colliders.boxes.push({ x: wallX, z: segMidZ, hw: 0.9, hd: segLen / 2 });
+    }
+
+    // Rectangular Stone-Brick Pilasters, Overhead Vault Ribs & Elemental Sconces
+    for (let z = z0 + 6; z <= z1 - 4; z += 12) {
+      const overheadRib = new THREE.Mesh(new THREE.BoxGeometry(segHalfW * 2, 0.7, 0.9), shortWallBrickMat);
+      overheadRib.position.set(cx, y0 + 6.0, z);
+      g.add(overheadRib);
+
+      for (const side of [-1, 1]) {
+        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.1, 6.2, 0.95), shortWallBrickMat);
+        pilaster.position.set(cx + side * (segHalfW - 0.55), y0 + 3.1, z);
+        g.add(pilaster);
+
+        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.25), ironMat);
+        bracket.position.set(cx + side * (segHalfW - 0.15), y0 + 3.6, z);
+        const flameOrb = new THREE.Mesh(
+          new THREE.ConeGeometry(0.22, 0.48, 6),
+          standard(sconceColor, { emissive: sconceColor, emissiveIntensity: 2.1 }),
+        );
+        flameOrb.position.set(cx + side * (segHalfW - 0.25), y0 + 3.95, z);
+        g.add(bracket, flameOrb);
+      }
+
+      if ((z - z0) % 24 === 6) {
+        const sconceLight = new THREE.PointLight(sconceColor, 2.9, 26, 1.4);
+        sconceLight.position.set(cx, y0 + 4.6, z);
+        g.add(sconceLight);
+      }
+    }
+  };
+
+  // Helper to build a grand ascending stone-brick staircase between floors
+  const addAscendingStaircase = (z0: number, z1: number, y0: number, y1: number, tintColor: string) => {
+    const steps = 16;
+    const stepD = (z1 - z0) / steps;
+    const stepH = (y1 - y0) / steps;
+    for (let i = 0; i < steps; i++) {
+      const sz = z0 + (i + 0.5) * stepD;
+      const sy = y0 + (i + 0.5) * stepH;
+      const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 - 2, stepH + 0.35, stepD + 0.15), intactSlabMat);
+      stepMesh.position.set(cx, sy - 0.15, sz);
+      stepMesh.receiveShadow = true;
+      g.add(stepMesh);
+    }
+    for (const side of [-1, 1]) {
+      const wallX = cx + side * (hw + 0.9);
+      const stairWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 12.5, z1 - z0 + 2), wallBrickMat);
+      stairWall.position.set(wallX, (y0 + y1) / 2 + 3.5, (z0 + z1) / 2);
+      g.add(stairWall);
+      colliders.boxes.push({ x: wallX, z: (z0 + z1) / 2, hw: 0.9, hd: (z1 - z0) / 2 });
+    }
+    const stairCeil = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 2.8, 1.2, z1 - z0 + 2), wallBrickMat);
+    stairCeil.position.set(cx, y1 + 6.9, (z0 + z1) / 2);
+    g.add(stairCeil);
+
+    const stairLight = new THREE.PointLight(tintColor, 2.6, 22, 1.4);
+    stairLight.position.set(cx, (y0 + y1) / 2 + 4.2, (z0 + z1) / 2);
+    g.add(stairLight);
+  };
+
+  // =========================================================================
+  // FLOOR 1 (z = 120..210, y = 0m — ❄️ ICE HEAD THEME: Frost-Fang Aqueduct)
+  // =========================================================================
+  addHallwaySegment(120, 210, 0, hw, iceFloorMat, "#38bdf8", true);
+
+  // Grand Stone-Brick Entrance Archway at z = 120
   for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(5.2, 6.4, 2.2), shortWallBrickMat);
-    pillar.position.set(cx + side * 6.8, 3.2, startZ);
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(6.4, 7.2, 2.4), shortWallBrickMat);
+    pillar.position.set(cx + side * 12.2, 3.6, startZ);
     pillar.castShadow = pillar.receiveShadow = true;
     g.add(pillar);
-    colliders.boxes.push({ x: cx + side * 6.8, z: startZ, hw: 2.6, hd: 1.1 });
+    colliders.boxes.push({ x: cx + side * 12.2, z: startZ, hw: 3.2, hd: 1.2 });
   }
   const lintel = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 3.2, 1.8, 2.6), shortWallBrickMat);
-  lintel.position.set(cx, 6.2, startZ);
-  lintel.castShadow = true;
+  lintel.position.set(cx, 6.6, startZ);
   g.add(lintel);
 
-  // 2. Flagstone Dungeon Floor & Vaulted Stone-Brick Ceiling
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 + 2, len + 4), floorFlagstoneMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(cx, 0.028, midZ);
-  floor.receiveShadow = true;
-  g.add(floor);
+  // Flooded Underground Ice-Water Canal (z = 132..172)
+  const canalWater = new THREE.Mesh(
+    new THREE.BoxGeometry(20.8, 0.18, 40),
+    standard("#0284c7", { emissive: "#0369a1", emissiveIntensity: 0.65, roughness: 0.2 }),
+  );
+  canalWater.position.set(cx, 0.08, 152);
+  g.add(canalWater);
 
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 2.8, 1.2, len), wallBrickMat);
-  ceiling.position.set(cx, 6.4, midZ);
-  ceiling.castShadow = true;
-  g.add(ceiling);
+  // Central Slippery Ice Stepping-Stones across the Flooded Canal (|x| <= 2.9)
+  for (let sz = 134; sz <= 170; sz += 4) {
+    const iceStone = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.5, 0.32, 8), iceCrystalMat);
+    iceStone.position.set(cx, 0.16, sz);
+    g.add(iceStone);
+  }
 
-  // Outer Square Masonry Walls + Interior Vaulted Stone Ribs (leaving recessed wall niches at |x| > 4.5 in Hallway 1!)
+  // West & East Raised Stone-Brick Side-Walkways (|x| >= 10.8) flanking the canal
   for (const side of [-1, 1]) {
-    const wallX = cx + side * (hw + 0.9);
-    const outerWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 6.2, len), wallBrickMat);
-    outerWall.position.set(wallX, 3.1, midZ);
-    outerWall.castShadow = outerWall.receiveShadow = true;
-    g.add(outerWall);
-    colliders.boxes.push({ x: wallX, z: midZ, hw: 0.9, hd: len / 2 });
+    const walkway = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.55, 42), intactSlabMat);
+    walkway.position.set(cx + side * 14.6, 0.28, 152);
+    walkway.receiveShadow = true;
+    g.add(walkway);
   }
-  const backWall = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 3.2, 6.2, 1.8), shortWallBrickMat);
-  backWall.position.set(cx, 3.1, endZ + 0.9);
-  g.add(backWall);
-  colliders.boxes.push({ x: cx, z: endZ + 0.9, hw: hw + 1.6, hd: 0.95 });
 
-  // Rectangular Stone-Brick Pilasters & Ceiling Ribs every 8m for authentic Frieren hallway geometry
-  for (let z = startZ + 6; z <= endZ - 4; z += 8) {
-    const overheadRib = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 0.7, 0.9), shortWallBrickMat);
-    overheadRib.position.set(cx, 5.55, z);
-    g.add(overheadRib);
+  // Waterfalls pouring from Wall Grates & Dripping Ceiling Icicles at z = 138, 152, 166
+  for (const wz of [138, 152, 166]) {
+    const waterfallCurtain = new THREE.Mesh(
+      new THREE.BoxGeometry(9.5, 6.2, 0.55),
+      new THREE.MeshBasicMaterial({ color: "#7dd3fc", transparent: true, opacity: 0.42 }),
+    );
+    waterfallCurtain.position.set(cx, 3.1, wz);
+    g.add(waterfallCurtain);
 
-    for (const side of [-1, 1]) {
-      const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.1, 5.6, 0.95), shortWallBrickMat);
-      pilaster.position.set(cx + side * (hw - 0.55), 2.8, z);
-      pilaster.castShadow = pilaster.receiveShadow = true;
-      g.add(pilaster);
+    for (let ix = -8; ix <= 8; ix += 4) {
+      const icicle = new THREE.Mesh(new THREE.ConeGeometry(0.24, 1.3, 6), iceCrystalMat);
+      icicle.rotation.x = Math.PI;
+      icicle.position.set(cx + ix, 5.8, wz);
+      g.add(icicle);
     }
   }
 
-  // Warm Torch & Blue Mana Sconces along the Brick Corridor
-  for (let z = startZ + 5; z <= endZ - 3; z += 12) {
-    const isSanctum = z >= BRICK_DUNGEON.sanctumStartZ;
-    const flameCol = isSanctum ? "#38bdf8" : "#ff9e3b";
-    for (const side of [-1, 1]) {
-      const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.25), ironMat);
-      bracket.position.set(cx + side * (hw - 0.15), 3.3, z);
-      const flameOrb = new THREE.Mesh(
-        new THREE.ConeGeometry(0.18, 0.42, 6),
-        standard(flameCol, { emissive: flameCol, emissiveIntensity: 2.1 }),
-      );
-      flameOrb.position.set(cx + side * (hw - 0.25), 3.6, z);
-      g.add(bracket, flameOrb);
-    }
-    const sconceLight = new THREE.PointLight(flameCol, 2.8, 17, 1.45);
-    sconceLight.position.set(cx, 4.1, z);
-    g.add(sconceLight);
-  }
-
-  // ---- HALLWAY 1 (z = 120..146): Cracked Floor Brick Slabs & Wall-Slit Arrow Volley ----
-  const slabRows = [127, 132, 137, 142];
+  // Cracked Frost-Slab Booby Traps (z = 126, 175, 181)
+  const slabRows = [126, 175, 181];
   const slabPairs: Array<{ left: THREE.Mesh; right: THREE.Mesh; rowIdx: number }> = [];
   slabRows.forEach((rz, rIdx) => {
-    const leftSlab = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.16, 2.1), crackedSlabMat);
-    leftSlab.position.set(cx - 2.1, 0.08, rz);
-    leftSlab.receiveShadow = true;
-    const rightSlab = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.16, 2.1), intactSlabMat);
-    rightSlab.position.set(cx + 2.1, 0.08, rz);
-    rightSlab.receiveShadow = true;
+    const leftSlab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.16, 2.4), crackedSlabMat);
+    leftSlab.position.set(cx - 2.6, 0.08, rz);
+    const rightSlab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.16, 2.4), intactSlabMat);
+    rightSlab.position.set(cx + 2.6, 0.08, rz);
     g.add(leftSlab, rightSlab);
     slabPairs.push({ left: leftSlab, right: rightSlab, rowIdx: rIdx });
   });
 
-  // Sweeping 3D Arrow Volley Bar firing down the central hallway
+  // Sweeping Frost-Arrow Volley Bar
   const arrowVolleyGroup = new THREE.Group();
-  for (const ax of [-2.4, -1.2, 0, 1.2, 2.4]) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.3, 6), standard("#d97706"));
+  for (const ax of [-3.6, -1.8, 0, 1.8, 3.6]) {
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 6), iceCrystalMat);
     shaft.rotation.x = Math.PI / 2;
-    shaft.position.set(ax, 1.25, 0);
-    const tip = new THREE.Mesh(
-      new THREE.ConeGeometry(0.09, 0.25, 6),
-      standard("#ef4444", { emissive: "#dc2626", emissiveIntensity: 1.4 }),
-    );
+    shaft.position.set(ax, 1.3, 0);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 6), iceCrystalMat);
     tip.rotation.x = -Math.PI / 2;
-    tip.position.set(ax, 1.25, -0.72);
+    tip.position.set(ax, 1.3, -0.78);
     arrowVolleyGroup.add(shaft, tip);
   }
   arrowVolleyGroup.position.set(cx, 0, BRICK_DUNGEON.hall1EndZ);
   g.add(arrowVolleyGroup);
 
-  // ---- DECISION 1 (z = 148..154): T-Junction Iron Wall Levers & Shifting Brick Partition ----
-  const leverBaseGeo = new THREE.BoxGeometry(0.45, 0.45, 0.35);
-  const leverRodGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.1, 8);
+  // T-Junction Iron Wall Levers & Shifting Brick Partition at z = 186..190
+  const leverBaseGeo = new THREE.BoxGeometry(0.5, 0.5, 0.4);
+  const leverRodGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 8);
   const leverWestBase = new THREE.Mesh(leverBaseGeo, ironMat);
-  leverWestBase.position.set(cx - 3.6, 0.25, BRICK_DUNGEON.junctionZ);
-  const leverWestRod = new THREE.Mesh(
-    leverRodGeo,
-    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.1 }),
-  );
-  leverWestRod.position.set(cx - 3.6, 0.75, BRICK_DUNGEON.junctionZ);
+  leverWestBase.position.set(cx - 5.2, 0.25, BRICK_DUNGEON.junctionZ);
+  const leverWestRod = new THREE.Mesh(leverRodGeo, iceCrystalMat);
+  leverWestRod.position.set(cx - 5.2, 0.8, BRICK_DUNGEON.junctionZ);
 
   const leverEastBase = new THREE.Mesh(leverBaseGeo, ironMat);
-  leverEastBase.position.set(cx + 3.6, 0.25, BRICK_DUNGEON.junctionZ);
+  leverEastBase.position.set(cx + 5.2, 0.25, BRICK_DUNGEON.junctionZ);
   const leverEastRod = new THREE.Mesh(
     leverRodGeo,
     standard("#f59e0b", { emissive: "#d97706", emissiveIntensity: 1.1 }),
   );
-  leverEastRod.position.set(cx + 3.6, 0.75, BRICK_DUNGEON.junctionZ);
+  leverEastRod.position.set(cx + 5.2, 0.8, BRICK_DUNGEON.junctionZ);
   g.add(leverWestBase, leverWestRod, leverEastBase, leverEastRod);
 
-  // Central Brick Pier at T-Junction + Sliding Stone-Brick Partition Wall
-  const centerPier = new THREE.Mesh(new THREE.BoxGeometry(2.2, 5.8, 3.6), shortWallBrickMat);
-  centerPier.position.set(cx, 2.9, 153);
-  g.add(centerPier);
-  colliders.boxes.push({ x: cx, z: 153, hw: 1.1, hd: 1.8 });
-
-  const shiftingBrickWall = new THREE.Mesh(new THREE.BoxGeometry(7.6, 5.6, 1.2), shortWallBrickMat);
-  shiftingBrickWall.position.set(cx + 4.4, 2.8, 152.5);
-  shiftingBrickWall.castShadow = shiftingBrickWall.receiveShadow = true;
+  const shiftingBrickWall = new THREE.Mesh(new THREE.BoxGeometry(15.5, 6.2, 1.4), shortWallBrickMat);
+  shiftingBrickWall.position.set(cx + 8.5, 3.1, 190.5);
   g.add(shiftingBrickWall);
 
-  // ---- DECISION 2 (z = 156..174): Frieren's 3-Chest Mimic Alcove Room & Secret Bookcase Wall ----
+  // 3-Chest Frost Mimic Alcove at z = 201.5 & Secret Sliding Brick Bookcase at z = 210
   const chestEntries: Array<{
     lidGroup: THREE.Group;
     teethGroup: THREE.Group;
     tongueMesh: THREE.Mesh;
   }> = [];
-  const chestXPositions = [cx - 4.8, cx, cx + 4.8];
+  const chestXPositions = [cx - 7.5, cx, cx + 7.5];
 
   chestXPositions.forEach((chX) => {
     const chestGroup = new THREE.Group();
-    chestGroup.position.set(chX, 0, 165.5);
+    chestGroup.position.set(chX, 0, 201.5);
 
-    // Raised stone dais under each chest
-    const dais = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.28, 2.0), intactSlabMat);
+    const dais = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.28, 2.2), intactSlabMat);
     dais.position.y = 0.14;
     chestGroup.add(dais);
 
-    // Lower wooden chest box + gold trim bands
-    const baseBox = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.75, 1.15), chestWoodMat);
-    baseBox.position.y = 0.65;
-    baseBox.castShadow = true;
-    const goldBand = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.77, 0.22), goldMat);
-    goldBand.position.y = 0.65;
+    const baseBox = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.78, 1.2), chestWoodMat);
+    baseBox.position.y = 0.66;
+    const goldBand = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.8, 0.24), goldMat);
+    goldBand.position.y = 0.66;
     chestGroup.add(baseBox, goldBand);
 
-    // Hinged Chest Lid (rotates open to reveal either Mimic Fangs or Golden Grimoire light!)
     const lidGroup = new THREE.Group();
-    lidGroup.position.set(0, 1.02, -0.55);
-    const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.45, 1.15), chestWoodMat);
-    lidMesh.position.set(0, 0.22, 0.55);
-    const lockPlate = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.12), goldMat);
-    lockPlate.position.set(0, 0.1, 1.14);
+    lidGroup.position.set(0, 1.04, -0.58);
+    const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.46, 1.2), chestWoodMat);
+    lidMesh.position.set(0, 0.23, 0.58);
+    const lockPlate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.14), goldMat);
+    lockPlate.position.set(0, 0.1, 1.18);
     lidGroup.add(lidMesh, lockPlate);
     chestGroup.add(lidGroup);
 
-    // Hidden Mimic Fangs & Red Monster Tongue inside the chest
     const teethGroup = new THREE.Group();
-    teethGroup.position.set(0, 0.98, 0);
+    teethGroup.position.set(0, 1.0, 0);
     const fangMat = standard("#f8fafc");
-    for (const fx of [-0.55, -0.28, 0, 0.28, 0.55]) {
+    for (const fx of [-0.6, -0.3, 0, 0.3, 0.6]) {
       const topFang = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.26, 5), fangMat);
       topFang.rotation.x = Math.PI;
-      topFang.position.set(fx, 0.18, 0.45);
+      topFang.position.set(fx, 0.18, 0.48);
       const botFang = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.24, 5), fangMat);
-      botFang.position.set(fx, -0.05, 0.45);
+      botFang.position.set(fx, -0.05, 0.48);
       teethGroup.add(topFang, botFang);
     }
     const tongueMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.12, 0.95),
+      new THREE.BoxGeometry(0.44, 0.12, 1.0),
       standard("#e11d48", { emissive: "#be123c", emissiveIntensity: 0.7 }),
     );
-    tongueMesh.position.set(0, 0.05, 0.45);
+    tongueMesh.position.set(0, 0.05, 0.48);
     teethGroup.add(tongueMesh);
     teethGroup.visible = false;
     chestGroup.add(teethGroup);
@@ -1448,93 +1560,241 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
     chestEntries.push({ lidGroup, teethGroup, tongueMesh });
   });
 
-  // Secret Sliding Brick Bookcase Wall at z = 174
   const secretBookcaseWall = new THREE.Group();
   secretBookcaseWall.position.set(cx, 0, BRICK_DUNGEON.secretWallZ);
-  const bookcaseBacking = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 5.8, 1.1), shortWallBrickMat);
-  bookcaseBacking.position.y = 2.9;
+  const bookcaseBacking = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 6.2, 1.2), shortWallBrickMat);
+  bookcaseBacking.position.y = 3.1;
   secretBookcaseWall.add(bookcaseBacking);
   const shelfColors = ["#dc2626", "#2563eb", "#16a34a", "#d97706", "#9333ea"];
-  for (const sy of [1.2, 2.4, 3.6]) {
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.16, 1.25), chestWoodMat);
+  for (const sy of [1.3, 2.6, 3.9]) {
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.18, 1.35), chestWoodMat);
     shelf.position.y = sy;
     secretBookcaseWall.add(shelf);
-    for (let b = -3; b <= 3; b++) {
+    for (let b = -4; b <= 4; b++) {
       const book = new THREE.Mesh(
-        new THREE.BoxGeometry(0.45, 0.75, 1.22),
+        new THREE.BoxGeometry(0.55, 0.82, 1.3),
         standard(shelfColors[Math.abs(b + Math.round(sy)) % shelfColors.length]!),
       );
-      book.position.set(b * 0.9, sy + 0.46, 0);
+      book.position.set(b * 1.05, sy + 0.48, 0);
       secretBookcaseWall.add(book);
     }
   }
   g.add(secretBookcaseWall);
 
-  // ---- DECISION 3 (z = 175..194): Parallel Iron-Bar Hallways, Loose Brick Switches & Portcullis Gates ----
-  for (let z = 176; z <= 192; z += 1.2) {
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 5.8, 8), ironMat);
-    bar.position.set(cx, 2.9, z);
+  // STAIRCASE 1 -> 2 (z = 210..226, y = 0m -> +6.0m)
+  addAscendingStaircase(
+    BRICK_DUNGEON.stairs1StartZ,
+    BRICK_DUNGEON.stairs1EndZ,
+    0,
+    BRICK_DUNGEON.floor2Y,
+    "#38bdf8",
+  );
+
+  // =========================================================================
+  // FLOOR 2 (z = 226..316, y = +6.0m — 🔥 FIRE HEAD THEME: Ember & Spider-Web Hallway)
+  // =========================================================================
+  const y2 = BRICK_DUNGEON.floor2Y;
+  addHallwaySegment(226, 316, y2, hw, fireFloorMat, "#f97316", true);
+
+  // Glowing Magma Side Trenches & West/East Raised Stone-Brick Galleries
+  for (const side of [-1, 1]) {
+    const lavaStrip = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.16, 84), magmaMat);
+    lavaStrip.position.set(cx + side * 8.6, y2 + 0.08, 271);
+    g.add(lavaStrip);
+
+    const sideGallery = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.4, 84), intactSlabMat);
+    sideGallery.position.set(cx + side * 14.5, y2 + 0.2, 271);
+    g.add(sideGallery);
+  }
+
+  // 3 Sticky Cinder-Spider Web Curtains at z = 238, 256, 274 (burnable with Torch!)
+  const webZPositions = [BRICK_DUNGEON.web1Z, BRICK_DUNGEON.web2Z, BRICK_DUNGEON.web3Z];
+  const webMeshes: THREE.Group[] = [];
+  const webMat = new THREE.MeshBasicMaterial({
+    color: "#e2e8f0",
+    transparent: true,
+    opacity: 0.58,
+    side: THREE.DoubleSide,
+  });
+  webZPositions.forEach((wz) => {
+    const webGroup = new THREE.Group();
+    webGroup.position.set(cx, y2, wz);
+    const mainSheet = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 2, 5.8), webMat);
+    mainSheet.position.y = 2.9;
+    webGroup.add(mainSheet);
+    for (let a = 0; a < 6; a++) {
+      const strand = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 - 1, 0.08, 0.08), webMat);
+      strand.position.y = 3.0;
+      strand.rotation.z = (a / 6) * Math.PI;
+      webGroup.add(strand);
+    }
+    g.add(webGroup);
+    webMeshes.push(webGroup);
+  });
+
+  // 3 Swinging Molten Pendulum Scythe Blades at z = 262, 278, 294
+  const pendulumZPositions = [BRICK_DUNGEON.pendulum1Z, BRICK_DUNGEON.pendulum2Z, BRICK_DUNGEON.pendulum3Z];
+  const pendulumPivots: THREE.Group[] = [];
+  pendulumZPositions.forEach((pz) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(cx, y2 + 6.2, pz);
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.8, 8), ironMat);
+    rod.position.y = -2.4;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.3, 0.22), magmaMat);
+    blade.position.y = -4.6;
+    pivot.add(rod, blade);
+    g.add(pivot);
+    pendulumPivots.push(pivot);
+  });
+
+  // Rolling Fire-Boulder in the Central Groove (z = 280..314)
+  const fireBoulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(2.6, 1), magmaMat);
+  fireBoulderMesh.position.set(cx, y2 + 2.6, BRICK_DUNGEON.boulderEndZ);
+  fireBoulderMesh.castShadow = true;
+  g.add(fireBoulderMesh);
+
+  // STAIRCASE 2 -> 3 (z = 316..332, y = +6.0m -> +12.0m)
+  addAscendingStaircase(
+    BRICK_DUNGEON.stairs2StartZ,
+    BRICK_DUNGEON.stairs2EndZ,
+    BRICK_DUNGEON.floor2Y,
+    BRICK_DUNGEON.floor3Y,
+    "#f97316",
+  );
+
+  // =========================================================================
+  // FLOOR 3 (z = 332..404, y = +12.0m — 🌑 SHADOW HEAD THEME: Chasm & Wolf Den)
+  // =========================================================================
+  const y3 = BRICK_DUNGEON.floor3Y;
+  addHallwaySegment(332, 340, y3, hw, shadowFloorMat, "#a855f7", true);
+  addHallwaySegment(340, 368, y3, hw, shadowFloorMat, "#a855f7", false);
+  addHallwaySegment(368, 404, y3, hw, shadowFloorMat, "#a855f7", true);
+
+  // Bottomless Shadow-Mana Chasm (z = 340..368) with Central Stone Bridge & Outer Catwalks
+  const chasmVoid = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, 28), shadowVoidMat);
+  chasmVoid.rotation.x = -Math.PI / 2;
+  chasmVoid.position.set(cx, y3 - 3.5, 354);
+  g.add(chasmVoid);
+
+  const centralBridge = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.45, 29), intactSlabMat);
+  centralBridge.position.set(cx, y3 + 0.15, 354);
+  centralBridge.receiveShadow = true;
+  g.add(centralBridge);
+
+  for (const side of [-1, 1]) {
+    const outerCatwalk = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.45, 29), intactSlabMat);
+    outerCatwalk.position.set(cx + side * 14.6, y3 + 0.15, 354);
+    outerCatwalk.receiveShadow = true;
+    g.add(outerCatwalk);
+  }
+
+  // Parallel Iron-Bar Corridors (z = 372..392), Loose Brick Switches (z = 382) & Portcullis Gates (z = 388)
+  for (let z = 372; z <= 392; z += 1.4) {
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6.2, 8), ironMat);
+    bar.position.set(cx, y3 + 3.1, z);
     g.add(bar);
   }
-  colliders.boxes.push({ x: cx, z: 184, hw: 0.35, hd: 8.2 });
+  colliders.boxes.push({ x: cx, z: 382, hw: 0.4, hd: 10.0 });
 
-  // Protruding Loose Brick Switches on the West & East masonry walls at z = 183
-  const switchMat = standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 0.95 });
-  const looseBrickWest = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.55, 0.85), switchMat);
-  looseBrickWest.position.set(cx - hw + 0.35, 1.5, 183);
-  const looseBrickEast = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.55, 0.85), switchMat);
-  looseBrickEast.position.set(cx + hw - 0.35, 1.5, 183);
+  const switchMat = standard("#a855f7", { emissive: "#9333ea", emissiveIntensity: 1.2 });
+  const looseBrickWest = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.95), switchMat);
+  looseBrickWest.position.set(cx - hw + 0.45, y3 + 1.6, BRICK_DUNGEON.switchZ);
+  const looseBrickEast = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.95), switchMat);
+  looseBrickEast.position.set(cx + hw - 0.45, y3 + 1.6, BRICK_DUNGEON.switchZ);
   g.add(looseBrickWest, looseBrickEast);
 
-  // Left & Right Iron Portcullis Gates at z = 188
   const buildPortcullis = (gateCenterX: number) => {
     const gateGroup = new THREE.Group();
-    gateGroup.position.set(gateCenterX, 0, BRICK_DUNGEON.gateZ);
-    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.35, 0.35), ironMat);
-    topBeam.position.y = 5.2;
-    const midBeam = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.28, 0.35), ironMat);
-    midBeam.position.y = 2.6;
+    gateGroup.position.set(gateCenterX, y3, BRICK_DUNGEON.gateZ);
+    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(17.5, 0.38, 0.38), ironMat);
+    topBeam.position.y = 5.6;
+    const midBeam = new THREE.Mesh(new THREE.BoxGeometry(17.5, 0.3, 0.38), ironMat);
+    midBeam.position.y = 2.8;
     gateGroup.add(topBeam, midBeam);
-    for (let bx = -3.4; bx <= 3.4; bx += 0.85) {
-      const vBar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5.4, 8), ironMat);
-      vBar.position.set(bx, 2.7, 0);
+    for (let bx = -8.0; bx <= 8.0; bx += 1.15) {
+      const vBar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 5.8, 8), ironMat);
+      vBar.position.set(bx, 2.9, 0);
       gateGroup.add(vBar);
     }
     g.add(gateGroup);
     return gateGroup;
   };
-  const leftPortcullis = buildPortcullis(cx - 4.4);
-  const rightPortcullis = buildPortcullis(cx + 4.4);
+  const leftPortcullis = buildPortcullis(cx - 9.2);
+  const rightPortcullis = buildPortcullis(cx + 9.2);
 
-  // ---- SANCTUM 4 (z = 194..208): The King's Tomb Golden Vault ----
-  const vaultDais = new THREE.Mesh(new THREE.BoxGeometry(8.5, 0.45, 5.5), intactSlabMat);
-  vaultDais.position.set(cx, 0.22, BRICK_DUNGEON.vaultChestZ);
+  // STAIRCASE 3 -> 4 (z = 404..420, y = +12.0m -> +18.0m)
+  addAscendingStaircase(
+    BRICK_DUNGEON.stairs3StartZ,
+    BRICK_DUNGEON.stairs3EndZ,
+    BRICK_DUNGEON.floor3Y,
+    BRICK_DUNGEON.floor4Y,
+    "#a855f7",
+  );
+
+  // =========================================================================
+  // FLOOR 4 (z = 420..480, y = +18.0m — 👑 SANCTUM OF THE 3-FACED DIRE WOLF)
+  // =========================================================================
+  const y4 = BRICK_DUNGEON.floor4Y;
+  addHallwaySegment(420, 480, y4, bossHw, bossFloorMat, "#fbbf24", true);
+
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(bossHw * 2 + 3.2, 7.2, 1.8), shortWallBrickMat);
+  backWall.position.set(cx, y4 + 3.6, endZ + 0.9);
+  g.add(backWall);
+  colliders.boxes.push({ x: cx, z: endZ + 0.9, hw: bossHw + 1.6, hd: 0.95 });
+
+  // 3 Elemental Rune Circles on the Boss Sanctum Floor (❄️ Frost, 🔥 Fire, 🌑 Shadow)
+  const runeSpecs: Array<[number, string]> = [
+    [-9.5, "#38bdf8"],
+    [0, "#f97316"],
+    [9.5, "#a855f7"],
+  ];
+  for (const [rx, rCol] of runeSpecs) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(3.4, 3.9, 32),
+      new THREE.MeshBasicMaterial({ color: rCol, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(cx + rx, y4 + 0.05, BRICK_DUNGEON.bossHomeZ);
+    g.add(ring);
+  }
+
+  // Golden Royal Vault Dais & Chest at z = 470
+  const vaultDais = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.55, 6.5), intactSlabMat);
+  vaultDais.position.set(cx, y4 + 0.28, BRICK_DUNGEON.vaultChestZ);
   g.add(vaultDais);
 
   const royalVaultChest = new THREE.Group();
-  royalVaultChest.position.set(cx, 0.45, BRICK_DUNGEON.vaultChestZ);
-  const vBox = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.25, 1.65), goldMat);
-  vBox.position.y = 0.62;
+  royalVaultChest.position.set(cx, y4 + 0.55, BRICK_DUNGEON.vaultChestZ);
+  const vBox = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.45, 2.0), goldMat);
+  vBox.position.y = 0.72;
   vBox.castShadow = true;
   const vGem = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.45, 0),
-    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 2.0 }),
+    new THREE.OctahedronGeometry(0.6, 0),
+    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 2.2 }),
   );
-  vGem.position.set(0, 1.65, 0);
+  vGem.position.set(0, 1.95, 0);
   royalVaultChest.add(vBox, vGem);
   g.add(royalVaultChest);
+
+  // Waterfall Escape Slide Portal at z = 476 (slides players back to Floor 1!)
+  const escapeArch = new THREE.Mesh(
+    new THREE.TorusGeometry(2.4, 0.28, 10, 24),
+    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.5 }),
+  );
+  escapeArch.position.set(cx, y4 + 2.4, BRICK_DUNGEON.escapeSlideZ);
+  g.add(escapeArch);
 
   scene.add(g);
 
   createNoticeBoard(scene, colliders, {
-    x: cx - 7.8,
-    z: startZ - 3.0,
+    x: cx - 10.5,
+    z: startZ - 3.5,
     yaw: Math.PI,
-    title: "KING'S TOMB BRICK DUNGEON",
+    title: "4-FLOOR ELEMENTAL BRICK DUNGEON",
     lines: [
-      "1. Equip 🔥 Torch to spot Cracked Floor Bricks & Arrow Niches",
-      "2. Pull Levers to shift brick walls; open 3 Chests (Beware Mimics!)",
-      "3. Press Loose Bricks to raise Portcullis Gates & claim the Vault",
+      "F1 ❄️ ICE: Cross Ice Canal, dodge waterfalls, solve 3 Mimic Chests",
+      "F2 🔥 FIRE: Burn Spiderwebs with 🔥 Torch, dodge Pendulums & Boulder",
+      "F3 🌑 SHADOW & F4 👑 BOSS: Fight Shadow Wolves & 3-Faced Dire Wolf!",
     ],
   });
 
@@ -1548,29 +1808,31 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
       vaultUnlocked: number,
       arrowVolleyZ: number,
       mimicTrapped: number,
+      websBurned: number,
+      fireBoulderZ: number,
       nowMs: number,
     ) {
       const tSec = nowMs / 1000;
 
-      // 1. Update Cracked vs Intact Floor Brick Slabs based on dungeonSeed
+      // 1. Floor 1 Cracked vs Intact Frost Slabs
       for (const pair of slabPairs) {
         const crackedOnLeft = (pair.rowIdx + dungeonSeed) % 2 === 0;
         pair.left.material = crackedOnLeft ? crackedSlabMat : intactSlabMat;
         pair.right.material = crackedOnLeft ? intactSlabMat : crackedSlabMat;
       }
 
-      // 2. Move Hallway 1 Arrow Volley
+      // 2. Floor 1 Arrow Volley
       if (Number.isFinite(arrowVolleyZ)) {
         arrowVolleyGroup.position.z = arrowVolleyZ;
       }
 
-      // 3. Slide T-Junction Brick Partition Wall (dungeonWing === 1 opens West, blocks East)
-      const targetWallX = dungeonWing === 1 ? cx + 4.4 : cx - 4.4;
+      // 3. Floor 1 T-Junction Shifting Brick Wall
+      const targetWallX = dungeonWing === 1 ? cx + 8.5 : cx - 8.5;
       shiftingBrickWall.position.x += (targetWallX - shiftingBrickWall.position.x) * 0.14;
       leverWestRod.rotation.x = dungeonWing === 1 ? -0.45 : 0.45;
       leverEastRod.rotation.x = dungeonWing === 2 ? -0.45 : 0.45;
 
-      // 4. Animate the 3 Ornate Chests (Mimic chomping jaws vs Grimoire found)
+      // 4. Floor 1 Mimic Chests & Secret Bookcase Wall
       const realChestIdx = dungeonSeed % 3;
       chestEntries.forEach((entry, idx) => {
         const isReal = idx === realChestIdx;
@@ -1587,24 +1849,41 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
         }
       });
 
-      // 5. Slide Secret Brick Bookcase Wall open when the Grimoire Key is found
-      const bookcaseTargetX = grimoireFound === 1 ? cx + 8.6 : cx;
+      const bookcaseTargetX = grimoireFound === 1 ? cx + 16.5 : cx;
       secretBookcaseWall.position.x += (bookcaseTargetX - secretBookcaseWall.position.x) * 0.1;
 
-      // 6. Raise Parallel Iron Portcullis Gates when Loose Brick Switches are pressed
-      const leftGateY = gateLeftOpen === 1 ? 4.8 : 0;
-      const rightGateY = gateRightOpen === 1 ? 4.8 : 0;
+      // 5. Floor 2 Burnable Spiderweb Curtains, Swinging Molten Pendulums & Rolling Fire-Boulder
+      webMeshes.forEach((wm, idx) => {
+        const bit = 1 << idx;
+        wm.visible = (websBurned & bit) === 0;
+      });
+      pendulumPivots.forEach((piv, idx) => {
+        const dir = idx % 2 === 0 ? 1 : -1;
+        piv.rotation.z = Math.sin(tSec * 2.4 + idx) * 0.65 * dir;
+      });
+      if (Number.isFinite(fireBoulderZ)) {
+        fireBoulderMesh.position.z = fireBoulderZ;
+        fireBoulderMesh.rotation.x -= 0.14;
+      }
+
+      // 6. Floor 3 Parallel Iron Portcullis Gates
+      const leftGateY = y3 + (gateLeftOpen === 1 ? 5.2 : 0);
+      const rightGateY = y3 + (gateRightOpen === 1 ? 5.2 : 0);
       leftPortcullis.position.y += (leftGateY - leftPortcullis.position.y) * 0.14;
       rightPortcullis.position.y += (rightGateY - rightPortcullis.position.y) * 0.14;
 
-      // 7. Rotate the Royal Vault Gem
+      // 7. Floor 4 Royal Vault Gem & Escape Portal
       vGem.rotation.y = tSec * 1.8;
-      vGem.position.y = 1.65 + (vaultUnlocked === 1 ? 0.45 : 0) + Math.sin(tSec * 3) * 0.12;
+      vGem.position.y = 1.95 + (vaultUnlocked === 1 ? 0.55 : 0) + Math.sin(tSec * 3) * 0.14;
+      escapeArch.rotation.z = tSec * 1.2;
     },
   };
 }
 
-/** Pure 3D low-poly forest animal or multi-segment slithering snake mesh! */
+/**
+ * Pure 3D low-poly forest animal, slithering snake, Giant Ember Spider,
+ * Shadow Wolf, or Colossal 3-Faced Dire Wolf Boss ("cerberus") mesh!
+ */
 function createAnimalMesh(species: string): AnimalMeshEntry {
   const group = new THREE.Group();
 
@@ -1615,7 +1894,6 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
     const tongueMat = standard("#ef4444", { emissive: "#dc2626", emissiveIntensity: 0.9 });
     const segments: THREE.Mesh[] = [];
 
-    // Cobra hood & head
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.24, 0.38), snakeGreen);
     head.position.set(0, 0.22, 0.65);
     const hood = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.32, 0.16), bellyMat);
@@ -1648,6 +1926,114 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
     };
   }
 
+  // Floor 2: Giant Cinder-Spider with 8 jointed legs, glowing magma abdomen & ceiling silk thread
+  if (species === "spider") {
+    const chitinMat = standard("#1c1917");
+    const emberMat = standard("#f97316", { emissive: "#ea580c", emissiveIntensity: 1.35 });
+    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.58, 10, 8), chitinMat);
+    abdomen.position.set(0, 0.55, -0.35);
+    const emberStripe = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), emberMat);
+    emberStripe.position.set(0, 0.72, -0.35);
+    const thorax = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 0.55), chitinMat);
+    thorax.position.set(0, 0.48, 0.28);
+    group.add(abdomen, emberStripe, thorax);
+
+    for (const ex of [-0.16, -0.06, 0.06, 0.16]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 6), emberMat);
+      eye.position.set(ex, 0.56, 0.56);
+      group.add(eye);
+    }
+    for (const side of [-1, 1]) {
+      for (const lz of [-0.25, -0.05, 0.15, 0.35]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.1, 0.1), chitinMat);
+        leg.position.set(side * 0.58, 0.36, lz);
+        leg.rotation.z = side * -0.42;
+        group.add(leg);
+      }
+    }
+    const silkLine = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.018, 5.5, 6),
+      new THREE.MeshBasicMaterial({ color: "#e2e8f0", transparent: true, opacity: 0.45 }),
+    );
+    silkLine.position.set(0, 3.2, 0);
+    group.add(silkLine);
+
+    return { group, species, targetX: 0, targetZ: 250, targetRot: 0 };
+  }
+
+  // Floor 4 Final Boss: Colossal 3-Faced Dire Wolf (❄️ Left Ice Head, 🔥 Center Fire Head, 🌑 Right Shadow Head)
+  if (species === "cerberus") {
+    const furMat = standard("#1e1b2e", { roughness: 0.75 });
+    const iceMat = standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.4 });
+    const fireMat = standard("#f97316", { emissive: "#ea580c", emissiveIntensity: 1.5 });
+    const shadowMat = standard("#a855f7", { emissive: "#7e22ce", emissiveIntensity: 1.4 });
+    const fangMat = standard("#f8fafc");
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(2.8, 2.2, 4.2), furMat);
+    torso.position.set(0, 2.1, 0);
+    torso.castShadow = true;
+    const mane = new THREE.Mesh(new THREE.BoxGeometry(3.3, 2.5, 1.8), furMat);
+    mane.position.set(0, 2.5, 1.4);
+    group.add(torso, mane);
+
+    for (const lx of [-1.05, 1.05]) {
+      for (const lz of [-1.45, 1.45]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.8, 0.62), furMat);
+        leg.position.set(lx, 0.9, lz);
+        leg.castShadow = true;
+        group.add(leg);
+      }
+    }
+
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.42, 2.2, 6), shadowMat);
+    tail.rotation.x = -Math.PI / 3;
+    tail.position.set(0, 2.3, -2.5);
+    group.add(tail);
+
+    const heads: THREE.Mesh[] = [];
+    const headConfigs: Array<{ x: number; y: number; yaw: number; mat: THREE.Material }> = [
+      { x: -1.25, y: 3.1, yaw: 0.28, mat: iceMat },
+      { x: 0, y: 3.45, yaw: 0, mat: fireMat },
+      { x: 1.25, y: 3.1, yaw: -0.28, mat: shadowMat },
+    ];
+    for (const hc of headConfigs) {
+      const skull = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.0, 1.35), furMat);
+      skull.position.set(hc.x, hc.y, 2.45);
+      skull.rotation.y = hc.yaw;
+
+      const snout = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.56, 0.95), hc.mat);
+      snout.position.set(0, -0.12, 0.85);
+      skull.add(snout);
+
+      for (const ex of [-0.32, 0.32]) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.58, 4), hc.mat);
+        ear.position.set(ex, 0.68, -0.15);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), hc.mat);
+        eye.position.set(ex * 0.85, 0.18, 0.66);
+        const fang = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.34, 5), fangMat);
+        fang.rotation.x = Math.PI;
+        fang.position.set(ex * 0.65, -0.38, 1.05);
+        skull.add(ear, eye, fang);
+      }
+      group.add(skull);
+      heads.push(skull);
+    }
+
+    const bossAura = new THREE.PointLight("#f97316", 3.6, 18, 1.4);
+    bossAura.position.set(0, 3.8, 1.5);
+    group.add(bossAura);
+
+    return {
+      group,
+      species,
+      segments: heads,
+      targetX: 0,
+      targetZ: BRICK_DUNGEON.bossHomeZ,
+      targetRot: Math.PI,
+    };
+  }
+
+  const isShadowWolf = species === "shadow_wolf";
   const color =
     species === "rabbit"
       ? "#f1f5f9"
@@ -1655,16 +2041,38 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
         ? "#b57c4a"
         : species === "boar"
           ? "#4b382a"
-          : "#64748b";
-  const scale = species === "rabbit" ? 0.55 : species === "deer" ? 1.05 : species === "boar" ? 0.9 : 0.95;
+          : isShadowWolf
+            ? "#2e1065"
+            : "#64748b";
+  const scale =
+    species === "rabbit"
+      ? 0.55
+      : species === "deer"
+        ? 1.05
+        : species === "boar"
+          ? 0.9
+          : isShadowWolf
+            ? 1.18
+            : 0.95;
 
-  const mat = standard(color);
+  const mat = isShadowWolf
+    ? standard(color, { emissive: "#581c87", emissiveIntensity: 0.75 })
+    : standard(color);
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.7 * scale, 0.55 * scale, 1.15 * scale), mat);
   body.position.y = 0.55 * scale;
   body.castShadow = true;
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.45 * scale, 0.45 * scale, 0.5 * scale), mat);
   head.position.set(0, 0.85 * scale, 0.55 * scale);
   group.add(body, head);
+
+  if (isShadowWolf) {
+    const eyeMat = standard("#c084fc", { emissive: "#a855f7", emissiveIntensity: 1.8 });
+    for (const ex of [-0.14 * scale, 0.14 * scale]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06 * scale, 6, 6), eyeMat);
+      eye.position.set(ex, 0.92 * scale, 0.82 * scale);
+      group.add(eye);
+    }
+  }
 
   for (const lx of [-0.22 * scale, 0.22 * scale]) {
     for (const lz of [-0.38 * scale, 0.38 * scale]) {
