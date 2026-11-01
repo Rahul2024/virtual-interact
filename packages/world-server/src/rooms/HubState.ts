@@ -65,22 +65,26 @@ export const HubState = schema(
     ballZ: t.float32().default(0),
     scoreRed: t.uint8().default(0),
     scoreBlue: t.uint8().default(0),
-    /** South Forest roaming wildlife (including slithering snakes). */
+    /** South Forest & 4-Floor Dungeon creatures (snakes, spiders, shadow wolves, 3-Faced Dire Wolf boss). */
     animals: t.map(ForestAnimal),
-    /** Frieren Brick Dungeon state: 1 = West Brick Wing open, 2 = East Brick Wing open. */
+    /** Floor 1 Brick Dungeon state: 1 = West Brick Wing open, 2 = East Brick Wing open. */
     dungeonWing: t.uint8().default(1),
     /** Seed (0..2) controlling which floor bricks are cracked and which Chest holds the Grimoire Key. */
     dungeonSeed: t.uint8().default(0),
-    /** 1 when the Grimoire Key chest has been found, sliding open the secret brick wall at z = 174. */
+    /** 1 when the Grimoire Key chest has been found, sliding open the secret brick wall at z = 210. */
     grimoireFound: t.uint8().default(0),
-    /** 1 when Left Iron Portcullis Gate at z = 188 is raised. */
+    /** Bitmask (0..7) of burned Spider-Web Curtains on Floor 2 (bit 1 = web1, bit 2 = web2, bit 4 = web3). */
+    websBurned: t.uint8().default(0),
+    /** 1 when Left Iron Portcullis Gate at z = 388 (Floor 3) is raised. */
     gateLeftOpen: t.uint8().default(0),
-    /** 1 when Right Iron Portcullis Gate at z = 188 is raised. */
+    /** 1 when Right Iron Portcullis Gate at z = 388 (Floor 3) is raised. */
     gateRightOpen: t.uint8().default(0),
-    /** 1 when the King's Tomb Golden Vault at z = 203 is unlocked. */
+    /** 1 when the King's Tomb Golden Vault at z = 470 (Floor 4) is unlocked. */
     vaultUnlocked: t.uint8().default(0),
-    /** Current Z coordinate of the hallway arrow-slit volley sweeping down Hallway 1. */
-    arrowVolleyZ: t.float32().default(144),
+    /** Current Z coordinate of the Frost-Arrow Volley sweeping down Floor 1. */
+    arrowVolleyZ: t.float32().default(184),
+    /** Current Z coordinate of the Rolling Fire-Boulder rumbling down Floor 2. */
+    fireBoulderZ: t.float32().default(314),
   },
   "HubState",
 );

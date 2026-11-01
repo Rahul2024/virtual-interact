@@ -4,6 +4,7 @@ import {
   TEAM,
   TOOL,
   formatIndianTime,
+  getDungeonFloorNumber,
   type ArcadeStateBroadcast,
   type DungeonActionType,
   type TeamId,
@@ -44,9 +45,9 @@ const TRIVIA_QUESTIONS: Array<{ q: string; options: [string, string, string, str
     answerIdx: 0,
   },
   {
-    q: "Which animal in the Deep Southern Forest yields 2 Raw Meat when hunted?",
-    options: ["Rabbit", "Sparrow", "Wild Boar / Wolf", "Squirrel"],
-    answerIdx: 2,
+    q: "What are the 3 elemental floor themes leading up to the 3-Faced Dire Wolf Boss?",
+    options: ["Earth, Wind & Water", "Ice (Floor 1), Fire (Floor 2) & Shadow (Floor 3)", "Gold, Silver & Bronze", "Sun, Moon & Stars"],
+    answerIdx: 1,
   },
   {
     q: "In the Ruins of the King's Tomb, how many of the 3 ornate chests are actually Mimics?",
@@ -354,7 +355,7 @@ export class ActivitiesController {
 
   /**
    * Shows a compact context button bar when the player is inside one of the
-   * activity zones (Mural, Football, Arcade, Campfire/Forest, or Frieren Brick Dungeon).
+   * activity zones (Mural, Football, Arcade, Campfire/Forest, or the 4-Floor Brick Dungeon).
    */
   updateContextBar(opts: {
     tool: ToolId;
@@ -370,9 +371,12 @@ export class ActivitiesController {
     inCampfire: boolean;
     inForest: boolean;
     inDungeon: boolean;
+    playerX: number;
     playerZ: number;
     dungeonWing: number;
     grimoireFound: number;
+    websBurned: number;
+    bossHp: number;
     mimicTrapped: number;
     anyPeerMimicTrapped: boolean;
     isNight: boolean;
@@ -390,15 +394,13 @@ export class ActivitiesController {
       return;
     }
 
-    const dungeonSubStage = !opts.inDungeon
-      ? 0
-      : opts.playerZ < BRICK_DUNGEON.mimicRoomStartZ
-        ? 1
-        : opts.playerZ < BRICK_DUNGEON.parallelStartZ
-          ? 2
-          : opts.playerZ < BRICK_DUNGEON.sanctumStartZ
-            ? 3
-            : 4;
+    const floorNum = getDungeonFloorNumber(opts.playerX, opts.playerZ);
+    const f1Stage =
+      floorNum !== 1
+        ? 0
+        : opts.playerZ < BRICK_DUNGEON.mimicRoomStartZ
+          ? 1
+          : 2;
 
     const key = [
       opts.tool,
@@ -412,9 +414,12 @@ export class ActivitiesController {
       opts.inArcade ? 1 : 0,
       opts.inCampfire ? 1 : 0,
       opts.inForest ? 1 : 0,
-      dungeonSubStage,
+      floorNum,
+      f1Stage,
       opts.dungeonWing,
       opts.grimoireFound,
+      opts.websBurned,
+      opts.bossHp > 0 ? 1 : 0,
       opts.mimicTrapped,
       opts.anyPeerMimicTrapped ? 1 : 0,
     ].join(":");
@@ -465,30 +470,51 @@ export class ActivitiesController {
         addBtn("🤝 Pull Friend Out of Mimic! (E)", "accent", () => this.onDungeonAction("rescue"));
       }
 
-      if (dungeonSubStage === 1) {
-        addBtn(
-          opts.dungeonWing === 1 ? "🌙 West Brick Wing (Open) ✓" : "🌙 Pull West Lever (E)",
-          opts.dungeonWing === 1 ? "accent" : "primary",
-          () => this.onDungeonAction("lever1"),
-        );
-        addBtn(
-          opts.dungeonWing === 2 ? "☀️ East Brick Wing (Open) ✓" : "☀️ Pull East Lever (E)",
-          opts.dungeonWing === 2 ? "accent" : "primary",
-          () => this.onDungeonAction("lever2"),
-        );
-      } else if (dungeonSubStage === 2 && opts.mimicTrapped === 0) {
-        addBtn("📦 Open West Chest #1", "primary", () => this.onDungeonAction("chest1"));
-        addBtn("📦 Open Center Chest #2", "primary", () => this.onDungeonAction("chest2"));
-        addBtn("📦 Open East Chest #3", "primary", () => this.onDungeonAction("chest3"));
-      } else if (dungeonSubStage === 3) {
-        addBtn("🧱 Press West Loose Brick (E)", "accent", () => this.onDungeonAction("switchL"));
-        addBtn("🧱 Press East Loose Brick (E)", "accent", () => this.onDungeonAction("switchR"));
-      } else if (dungeonSubStage === 4) {
-        addBtn("👑 Unlock King's Tomb Golden Vault (E)", "accent", () => this.onDungeonAction("vault"));
+      if (floorNum === 1) {
+        if (f1Stage === 1) {
+          addBtn(
+            opts.dungeonWing === 1 ? "❄️ West Frost Wing ✓" : "❄️ Pull West Lever (E)",
+            opts.dungeonWing === 1 ? "accent" : "primary",
+            () => this.onDungeonAction("lever1"),
+          );
+          addBtn(
+            opts.dungeonWing === 2 ? "❄️ East Frost Wing ✓" : "❄️ Pull East Lever (E)",
+            opts.dungeonWing === 2 ? "accent" : "primary",
+            () => this.onDungeonAction("lever2"),
+          );
+        } else if (opts.mimicTrapped === 0) {
+          addBtn("📦 West Chest #1", "primary", () => this.onDungeonAction("chest1"));
+          addBtn("📦 Center Chest #2", "primary", () => this.onDungeonAction("chest2"));
+          addBtn("📦 East Chest #3", "primary", () => this.onDungeonAction("chest3"));
+        }
+      } else if (floorNum === 2) {
+        if (opts.websBurned < 7) {
+          addBtn("🔥🕸️ Burn Spiderweb (E)", "accent", () => this.onDungeonAction("burnWeb"));
+        }
+        addBtn("🕷️ Strike Spider (Space)", "primary", () => this.onAttackNearestAnimal());
+      } else if (floorNum === 3) {
+        addBtn("🧱 Press Loose Brick Switch (E)", "accent", () => this.onDungeonAction("switchL"));
+        addBtn("🌑🐺 Fight Shadow Wolf (Space)", "primary", () => this.onAttackNearestAnimal());
+      } else if (floorNum === 4) {
+        if (opts.bossHp > 0) {
+          addBtn(`⚔️🐺 Attack 3-Faced Wolf (${opts.bossHp} HP · Space)`, "accent", () => this.onAttackNearestAnimal());
+        } else {
+          addBtn("👑 Unlock Golden Royal Vault (E)", "accent", () => this.onDungeonAction("vault"));
+        }
+        addBtn("🌊 Waterfall Slide to Floor 1", "primary", () => this.onDungeonAction("escapeSlide"));
       }
 
-      addBtn(opts.tool === TOOL.torch ? "🔥 Torch ✓" : "🔥 Equip Torch", opts.tool === TOOL.torch ? "accent" : "", () =>
+      if (opts.cookedMeat > 0) {
+        addBtn(`🍖 Eat Steak (${opts.cookedMeat})`, "primary active", () => this.onEatMeat());
+      }
+      addBtn(opts.tool === TOOL.torch ? "🔥 Torch ✓" : "🔥 Torch", opts.tool === TOOL.torch ? "accent" : "", () =>
         this.onEquipTool(opts.tool === TOOL.torch ? TOOL.none : TOOL.torch),
+      );
+      addBtn(opts.tool === TOOL.spear ? "🗡️ Spear ✓" : "🗡️ Spear", opts.tool === TOOL.spear ? "accent" : "", () =>
+        this.onEquipTool(opts.tool === TOOL.spear ? TOOL.none : TOOL.spear),
+      );
+      addBtn(opts.tool === TOOL.bow ? "🏹 Bow ✓" : "🏹 Bow", opts.tool === TOOL.bow ? "accent" : "", () =>
+        this.onEquipTool(opts.tool === TOOL.bow ? TOOL.none : TOOL.bow),
       );
     } else if (opts.inCampfire || opts.inForest) {
       if (opts.inCampfire) {

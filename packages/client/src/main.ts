@@ -15,6 +15,8 @@ import {
   PLAYER,
   REPO_URL,
   TEAM,
+  getDungeonFloorNumber,
+  getDungeonFloorY,
   isInArcadeZone,
   isInBrickDungeon,
   isInCampfireCircle,
@@ -132,7 +134,10 @@ window.addEventListener("keydown", (e) => {
       session.room.send(FOOTBALL_MSG.kick, { power: 18 });
       return;
     }
-    if (isInForestWilderness(session.me.position.x, session.me.position.z)) {
+    if (
+      isInBrickDungeon(session.me.position.x, session.me.position.z) ||
+      isInForestWilderness(session.me.position.x, session.me.position.z)
+    ) {
       e.preventDefault();
       attackNearestAnimal(session);
       return;
@@ -167,24 +172,33 @@ function triggerNearestBrickDungeonAction(s: Session, px: number, pz: number) {
     return;
   }
   for (const r of s.remotes.values()) {
-    if (r.avatar.mimicTrapped > 0 && Math.hypot(r.avatar.position.x - px, r.avatar.position.z - pz) <= 4.5) {
+    if (r.avatar.mimicTrapped > 0 && Math.hypot(r.avatar.position.x - px, r.avatar.position.z - pz) <= 5.5) {
       s.room.send(FOREST_MSG.dungeonAction, { action: "rescue" });
       return;
     }
   }
 
   const cx = BRICK_DUNGEON.centerX;
-  if (pz < BRICK_DUNGEON.mimicRoomStartZ) {
-    const action: DungeonActionType = px <= cx ? "lever1" : "lever2";
-    s.room.send(FOREST_MSG.dungeonAction, { action });
-  } else if (pz < BRICK_DUNGEON.parallelStartZ) {
-    const action: DungeonActionType = px < cx - 2.2 ? "chest1" : px > cx + 2.2 ? "chest3" : "chest2";
-    s.room.send(FOREST_MSG.dungeonAction, { action });
-  } else if (pz < BRICK_DUNGEON.sanctumStartZ) {
+  const floorNum = getDungeonFloorNumber(px, pz);
+  if (floorNum === 1) {
+    if (pz < BRICK_DUNGEON.mimicRoomStartZ) {
+      const action: DungeonActionType = px <= cx ? "lever1" : "lever2";
+      s.room.send(FOREST_MSG.dungeonAction, { action });
+    } else {
+      const action: DungeonActionType = px < cx - 2.2 ? "chest1" : px > cx + 2.2 ? "chest3" : "chest2";
+      s.room.send(FOREST_MSG.dungeonAction, { action });
+    }
+  } else if (floorNum === 2) {
+    s.room.send(FOREST_MSG.dungeonAction, { action: "burnWeb" });
+  } else if (floorNum === 3) {
     const action: DungeonActionType = px <= cx ? "switchL" : "switchR";
     s.room.send(FOREST_MSG.dungeonAction, { action });
   } else {
-    s.room.send(FOREST_MSG.dungeonAction, { action: "vault" });
+    if (pz >= BRICK_DUNGEON.escapeSlideZ - 2.5) {
+      s.room.send(FOREST_MSG.dungeonAction, { action: "escapeSlide" });
+    } else {
+      s.room.send(FOREST_MSG.dungeonAction, { action: "vault" });
+    }
   }
 }
 
@@ -521,7 +535,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
 
     callbacks.onAdd("players", (player, id) => {
       if (id === room.sessionId) {
-        me.position.set(player.x, 0, player.z);
+        me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
         me.rot = player.rot;
         me.seatId = player.seatId;
         me.mimicTrapped = player.mimicTrapped ?? 0;
@@ -541,7 +555,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
           s.cookedMeat = player.cookedMeat;
           s.energy = player.energy;
           if (player.mimicTrapped > 0) {
-            me.position.set(player.x, 0, player.z);
+            me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
             me.rot = player.rot;
             s.sentHistory.length = 0;
             return;
@@ -554,7 +568,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
           }
           const echoed = s.sentHistory.some((p) => Math.abs(p.x - player.x) < 0.05 && Math.abs(p.z - player.z) < 0.05);
           if (!echoed) {
-            me.position.set(player.x, 0, player.z);
+            me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
             s.sentHistory.length = 0;
           }
         });
@@ -564,7 +578,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       }
 
       const avatar = new Avatar(player.name, player.color);
-      avatar.position.set(player.x, 0, player.z);
+      avatar.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
       avatar.rot = player.rot;
       avatar.anim = player.anim as Anim;
       avatar.seatId = player.seatId;
@@ -714,7 +728,11 @@ function frame(now: number) {
       stepRemotes(session, dt);
       const isSeated = session.me.seatId >= 0;
       const isCinemaSeated = session.me.seatId >= 0 && session.me.seatId < 24;
-      camTarget.set(session.me.position.x, isSeated ? 1.25 : 1.5, session.me.position.z);
+      camTarget.set(
+        session.me.position.x,
+        session.me.position.y + (isSeated ? 1.25 : 1.5),
+        session.me.position.z,
+      );
       controls.updateCamera(world.camera, camTarget);
       maybeSend(session, dt);
       ideaWall.setNear(ideaWall.isNear(session.me.position));
@@ -742,18 +760,22 @@ function frame(now: number) {
           st.dungeonWing ?? 1,
           st.dungeonSeed ?? 0,
           st.grimoireFound ?? 0,
+          st.websBurned ?? 0,
           st.gateLeftOpen ?? 0,
           st.gateRightOpen ?? 0,
           st.vaultUnlocked ?? 0,
           st.arrowVolleyZ ?? BRICK_DUNGEON.hall1EndZ,
+          st.fireBoulderZ ?? BRICK_DUNGEON.boulderEndZ,
           session.me.mimicTrapped || (anyPeerMimicTrapped ? 1 : 0),
           Date.now(),
         );
       }
+      let bossHp = 30;
       if (st?.animals && typeof st.animals.values === "function") {
         const animalsList: AnimalRenderState[] = [];
         for (const a of st.animals.values()) {
           if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.z)) continue;
+          if (a.id === "boss-cerberus") bossHp = a.hp ?? 0;
           animalsList.push({
             id: a.id,
             species: a.species,
@@ -810,9 +832,12 @@ function frame(now: number) {
         inCampfire: isInCampfireCircle(mx, mz),
         inForest: isInForestWilderness(mx, mz),
         inDungeon: isInBrickDungeon(mx, mz),
+        playerX: mx,
         playerZ: mz,
         dungeonWing: st?.dungeonWing ?? 1,
         grimoireFound: st?.grimoireFound ?? 0,
+        websBurned: st?.websBurned ?? 0,
+        bossHp,
         mimicTrapped: session.me.mimicTrapped,
         anyPeerMimicTrapped,
         isNight: world.isNight,
@@ -844,6 +869,7 @@ function roomPlayerName(s: Session, sid: string): string {
 
 function stepLocal(s: Session, dt: number, now: number) {
   if (s.me.mimicTrapped > 0) {
+    s.me.position.y = getDungeonFloorY(s.me.position.x, s.me.position.z);
     s.me.update(dt);
     return;
   }
@@ -881,6 +907,7 @@ function stepLocal(s: Session, dt: number, now: number) {
     s.me.anim = ANIM.idle;
   }
   world.colliders.resolve(s.me.position, PLAYER.radius);
+  s.me.position.y = getDungeonFloorY(s.me.position.x, s.me.position.z);
   s.me.update(dt);
 }
 
@@ -890,6 +917,7 @@ function stepRemotes(s: Session, dt: number) {
     const p = r.avatar.position;
     p.x += (r.target.x - p.x) * k;
     p.z += (r.target.z - p.z) * k;
+    p.y = getDungeonFloorY(p.x, p.z);
     r.avatar.rot = lerpAngle(r.avatar.rot, r.target.rot, k);
     r.avatar.update(dt);
   }

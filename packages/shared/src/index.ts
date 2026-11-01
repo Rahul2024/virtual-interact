@@ -6,12 +6,13 @@
 export const REPO_URL = "https://github.com/Rahul2024/virtual-interact";
 
 /**
- * Expanded World: 460m × 460m (-230 to +230 on X and Z) to fit all city
- * districts plus the Deep Southern Forest and the Frieren-style Brick Dungeon.
+ * Expanded World: 1040m × 1040m (-520 to +520 on X and Z) to fit all city
+ * districts, the Deep Southern Forest, and the 360m-long 4-Floor Ascending
+ * Frieren-Style Stone-Brick Hallway Dungeon (`z = +120..+480`).
  */
 export const WORLD = {
-  size: 460,
-  half: 230,
+  size: 1040,
+  half: 520,
 } as const;
 
 export const PLAYER = {
@@ -185,40 +186,134 @@ export function isInCampfireCircle(x: number, z: number): boolean {
 }
 
 export function isInForestWilderness(x: number, z: number): boolean {
-  return z >= 38 && Math.abs(x) <= 210;
+  return z >= 38 && Math.abs(x) <= 240;
 }
 
 /**
- * Frieren-Style Square Stone-Brick Dungeon ("Ruins of the King's Tomb")
- * located across the Southern River Bridge at `x = 0, z = +120..+208`:
- * - Hallway 1 (`z = 120..146`): Square stone-brick corridor with cracked-slab traps & arrow slits
- * - Junction 1 (`z = 146..152`): Twin Iron Levers that shift the brick maze walls (West vs East Wing)
- * - Chamber 2 (`z = 152..174`): Frieren's 3-Chest Mimic Alcove Room (1 Grimoire Key, 2 Mimics!)
- * - Hallway 3 (`z = 174..196`): Parallel Iron-Bar Corridors with loose-brick co-op gate switches
- * - Sanctum 4 (`z = 196..208`): The King's Tomb Golden Vault
+ * 360m-Long 4-Floor Ascending Frieren-Style Stone-Brick Hallway Dungeon
+ * ("The Spire of the 3-Faced Dire Wolf" at `x = -24..+24, z = +120..+480`):
+ *
+ * - FLOOR 1 (`z = 120..210`, `y = 0m` — ❄️ ICE HEAD THEME: Frost-Fang Aqueduct Hallway):
+ *   - Flooded freezing underground canal (`z = 132..172`) with 10 slippery ice stepping-stones,
+ *     waterfalls pouring from wall grates & dripping ceiling icicles (`z = 138, 152, 166`),
+ *     plus branching West & East outer brick walkways (`x = ±14`).
+ *   - Cracked frost-slab booby traps (`z = 126..182`) & sweeping Frost-Arrow Volleys.
+ *   - Shifting Brick T-Junction Levers (`z = 186`) & 3-Chest Frost Mimic Alcove (`z = 192..208`)
+ *     + Secret Brick Bookcase Wall at `z = 210`.
+ * - STAIRCASE 1→2 (`z = 210..226`): Grand Stone-Brick Stairway climbing `y = 0m -> +6.0m`.
+ * - FLOOR 2 (`z = 226..316`, `y = +6.0m` — 🔥 FIRE HEAD THEME: Crimson-Ember & Spider-Web Hallway):
+ *   - Long elevated stone-brick hallway flanked by glowing magma channels & branching West/East galleries.
+ *   - Sticky Cinder-Spider Web Nets (`z = 238, 256, 274`) that slow movement until burned with a 🔥 Torch
+ *     + 4 Giant Ceiling Spiders (`spider-1..4`) dropping on silk threads.
+ *   - Timed Flame-Jet Wall Vents, Swinging Molten Pendulum Blades (`z = 262, 278, 294`), and
+ *     Rolling Fire-Boulders (`fireBoulderZ` in `282..314`).
+ * - STAIRCASE 2→3 (`z = 316..332`): Ascending Stone-Brick Stairway climbing `y = +6.0m -> +12.0m`.
+ * - FLOOR 3 (`z = 332..404`, `y = +12.0m` — 🌑 SHADOW HEAD THEME: Shadow-Mana Chasm & Wolf Den):
+ *   - Long vaulted purple-slate brick hallway with 3 branching paths over a bottomless abyss (`z = 340..368`),
+ *     Parallel Iron-Bar Corridors with Loose Brick Portcullis Switches (`z = 372..392`, Gate at `z = 388`),
+ *     and 4 prowling Small Shadow Wolves (`shadow-wolf-1..4`) that howl and ambush players on the approach!
+ * - STAIRCASE 3→4 (`z = 404..420`): Grand Sanctum Stairway climbing `y = +12.0m -> +18.0m`.
+ * - FLOOR 4 (`z = 420..480`, `y = +18.0m` — 👑 BOSS SANCTUM: Colossal Hall of the 3-Faced Dire Wolf):
+ *   - 44m-wide vaulted stone-brick boss arena where Cerberus, the 3-Faced Dire Wolf (`boss-cerberus`, 30 HP)
+ *     guards the Golden Royal Vault (`z = 470`) and the Waterfall Return Slide (`z = 476`).
  */
 export const BRICK_DUNGEON = {
   centerX: 0,
   startZ: 120,
-  endZ: 208,
-  halfW: 9.0,
-  hall1EndZ: 146,
-  junctionZ: 148,
-  mimicRoomStartZ: 152,
-  mimicRoomEndZ: 174,
-  secretWallZ: 174,
-  parallelStartZ: 175,
-  gateZ: 188,
-  sanctumStartZ: 194,
-  vaultChestZ: 203,
+  endZ: 480,
+  halfW: 19.0,
+  bossHalfW: 22.0,
+
+  // Floor 1: Ice Hallway (z = 120..210, y = 0)
+  waterStartZ: 132,
+  waterEndZ: 172,
+  hall1EndZ: 184,
+  junctionZ: 186,
+  mimicRoomStartZ: 190,
+  mimicRoomEndZ: 210,
+  secretWallZ: 210,
+
+  // Staircase 1->2 (z = 210..226, y = 0..6)
+  stairs1StartZ: 210,
+  stairs1EndZ: 226,
+  floor2Y: 6.0,
+
+  // Floor 2: Fire & Spider-Web Hallway (z = 226..316, y = 6)
+  web1Z: 238,
+  web2Z: 256,
+  web3Z: 274,
+  pendulum1Z: 262,
+  pendulum2Z: 278,
+  pendulum3Z: 294,
+  boulderStartZ: 280,
+  boulderEndZ: 314,
+  floor2EndZ: 316,
+
+  // Staircase 2->3 (z = 316..332, y = 6..12)
+  stairs2StartZ: 316,
+  stairs2EndZ: 332,
+  floor3Y: 12.0,
+
+  // Floor 3: Shadow Chasm & Wolf Den Hallway (z = 332..404, y = 12)
+  chasmStartZ: 340,
+  chasmEndZ: 368,
+  parallelStartZ: 372,
+  switchZ: 382,
+  gateZ: 388,
+  floor3EndZ: 404,
+
+  // Staircase 3->4 (z = 404..420, y = 12..18)
+  stairs3StartZ: 404,
+  stairs3EndZ: 420,
+  floor4Y: 18.0,
+
+  // Floor 4: Colossal Boss Sanctum (z = 420..480, y = 18)
+  sanctumStartZ: 420,
+  bossHomeZ: 446,
+  vaultChestZ: 470,
+  escapeSlideZ: 476,
 } as const;
 
 export function isInBrickDungeon(x: number, z: number): boolean {
-  return (
-    Math.abs(x - BRICK_DUNGEON.centerX) <= BRICK_DUNGEON.halfW + 3 &&
-    z >= BRICK_DUNGEON.startZ - 3 &&
-    z <= BRICK_DUNGEON.endZ + 3
-  );
+  const maxW = z >= BRICK_DUNGEON.sanctumStartZ ? BRICK_DUNGEON.bossHalfW + 3 : BRICK_DUNGEON.halfW + 3;
+  return Math.abs(x - BRICK_DUNGEON.centerX) <= maxW && z >= BRICK_DUNGEON.startZ - 3 && z <= BRICK_DUNGEON.endZ + 3;
+}
+
+/**
+ * Returns the vertical floor elevation `y` (in metres) at `(x, z)` along the
+ * 360m-long 4-Floor Ascending Stone-Brick Dungeon so avatars, enemies, and
+ * cameras smoothly climb the staircases from `y = 0m` up to `y = +18m`!
+ */
+export function getDungeonFloorY(x: number, z: number): number {
+  if (!isInBrickDungeon(x, z) || z <= BRICK_DUNGEON.stairs1StartZ) return 0;
+  if (z < BRICK_DUNGEON.stairs1EndZ) {
+    return ((z - BRICK_DUNGEON.stairs1StartZ) / (BRICK_DUNGEON.stairs1EndZ - BRICK_DUNGEON.stairs1StartZ)) * BRICK_DUNGEON.floor2Y;
+  }
+  if (z <= BRICK_DUNGEON.stairs2StartZ) return BRICK_DUNGEON.floor2Y;
+  if (z < BRICK_DUNGEON.stairs2EndZ) {
+    return (
+      BRICK_DUNGEON.floor2Y +
+      ((z - BRICK_DUNGEON.stairs2StartZ) / (BRICK_DUNGEON.stairs2EndZ - BRICK_DUNGEON.stairs2StartZ)) *
+        (BRICK_DUNGEON.floor3Y - BRICK_DUNGEON.floor2Y)
+    );
+  }
+  if (z <= BRICK_DUNGEON.stairs3StartZ) return BRICK_DUNGEON.floor3Y;
+  if (z < BRICK_DUNGEON.stairs3EndZ) {
+    return (
+      BRICK_DUNGEON.floor3Y +
+      ((z - BRICK_DUNGEON.stairs3StartZ) / (BRICK_DUNGEON.stairs3EndZ - BRICK_DUNGEON.stairs3StartZ)) *
+        (BRICK_DUNGEON.floor4Y - BRICK_DUNGEON.floor3Y)
+    );
+  }
+  return BRICK_DUNGEON.floor4Y;
+}
+
+export function getDungeonFloorNumber(x: number, z: number): 0 | 1 | 2 | 3 | 4 {
+  if (!isInBrickDungeon(x, z)) return 0;
+  if (z < BRICK_DUNGEON.stairs1EndZ) return 1;
+  if (z < BRICK_DUNGEON.stairs2EndZ) return 2;
+  if (z < BRICK_DUNGEON.stairs3EndZ) return 3;
+  return 4;
 }
 
 /** Proximity voice. Distances in metres; volumes 0..1. */
@@ -357,7 +452,7 @@ export interface ArcadeStateBroadcast {
   triviaScores: Record<string, number>;
 }
 
-// ---- South Campfire, Forest Hunting & Frieren Brick Dungeon Messages -------
+// ---- South Campfire, Forest Hunting & 4-Floor Brick Dungeon Messages -------
 
 export const FOREST_MSG = {
   equipTool: "forest:tool",
@@ -384,15 +479,25 @@ export type DungeonActionType =
   | "chest3"
   | "rescue"
   | "struggle"
+  | "burnWeb"
   | "switchL"
   | "switchR"
-  | "vault";
+  | "vault"
+  | "escapeSlide";
 
 export interface DungeonActionMessage {
   action: DungeonActionType;
 }
 
-export type AnimalSpecies = "rabbit" | "deer" | "boar" | "wolf" | "snake";
+export type AnimalSpecies =
+  | "rabbit"
+  | "deer"
+  | "boar"
+  | "wolf"
+  | "snake"
+  | "spider"
+  | "shadow_wolf"
+  | "cerberus";
 
 // ---- Friend System & Voice Privacy ----------------------------------------
 
@@ -485,9 +590,9 @@ export const CINEMA_SEATS: readonly CinemaSeat[] = (() => {
       id: id++,
       row: 10,
       col: i,
-      x,
-      z,
-      rot,
+      x: x,
+      z: z,
+      rot: rot,
     });
   }
   return list;
