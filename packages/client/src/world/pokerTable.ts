@@ -33,11 +33,11 @@ export interface PokerTableSnapshot {
   peeking: boolean;
 }
 
-const CARD_W = 0.1;
-const CARD_H = 0.14;
+const CARD_W = 0.12;
+const CARD_H = 0.168;
 /** Community cards are drawn larger so they read from every seat. */
-const BOARD_W = 0.19;
-const BOARD_H = 0.266;
+const BOARD_W = 0.24;
+const BOARD_H = 0.336;
 const CHIP_R = 0.0195;
 const CHIP_H = 0.0034;
 
@@ -194,18 +194,18 @@ export class PokerTableView {
     const T = POKER_TABLE;
     const cx = T.centerX;
     const cz = T.centerZ;
-    const y = this.tableY + 0.062;
+    const y = this.tableY + 0.07;
 
     // Community cards.
     snap.board.forEach((card, i) => {
       const m = new THREE.Mesh(this.boardGeo, this.cardMat(card));
-      m.position.set(-0.42 + i * 0.21, y + 0.004, -0.12);
+      m.position.set(-0.54 + i * 0.27, y + 0.004, -0.16);
       m.rotation.x = -Math.PI / 2;
       this.dynamic.add(m);
     });
 
     // Pot chips in the middle, in front of the board.
-    this.placeChips(snap.potChips, new THREE.Vector2(0, 0.32), y);
+    this.placeChips(snap.potChips, new THREE.Vector2(0, 0.42), y);
 
     this.turnRing.visible = false;
     for (const sv of snap.seats) {
