@@ -109,8 +109,8 @@ export class Controls {
     // Camera sits on the far side of the seat from the table.
     this.pokerBaseYaw = Math.atan2(seat.x - table.x, seat.z - table.z);
     this.yaw = this.pokerBaseYaw;
-    this.pitch = 0.62;
-    this.distance = 1.7;
+    this.pitch = 0.55;
+    this.distance = 2.1;
   }
 
   exitPokerSeatView() {
@@ -129,14 +129,15 @@ export class Controls {
       d = THREE.MathUtils.clamp(d, -1.0, 1.0);
       this.yaw = this.pokerBaseYaw + d;
       this.pitch = THREE.MathUtils.clamp(this.pitch, 0.3, 1.05);
-      this.distance = THREE.MathUtils.clamp(this.distance, 1.2, 2.4);
+      this.distance = THREE.MathUtils.clamp(this.distance, 1.4, 3.0);
       const cp = Math.cos(this.pitch);
       const x = target.x + Math.sin(this.yaw) * cp * this.distance;
       const z = target.z + Math.cos(this.yaw) * cp * this.distance;
       const y = target.y + 0.15 + Math.sin(this.pitch) * this.distance;
       camera.position.set(x, y, z);
       // Look a little past the player, at the felt in front of them.
-      camera.lookAt(target.x - Math.sin(this.yaw) * 0.9, target.y - 0.45, target.z - Math.cos(this.yaw) * 0.9);
+      // Aim between your cards and the middle of the table so the board is always in view.
+      camera.lookAt(target.x - Math.sin(this.yaw) * 1.9, target.y - 0.7, target.z - Math.cos(this.yaw) * 1.9);
       return;
     }
     if (this.seatedInCinema) {

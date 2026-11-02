@@ -33,8 +33,11 @@ export interface PokerTableSnapshot {
   peeking: boolean;
 }
 
-const CARD_W = 0.082;
-const CARD_H = 0.115;
+const CARD_W = 0.1;
+const CARD_H = 0.14;
+/** Community cards are drawn larger so they read from every seat. */
+const BOARD_W = 0.19;
+const BOARD_H = 0.266;
 const CHIP_R = 0.0195;
 const CHIP_H = 0.0034;
 
@@ -50,6 +53,7 @@ export class PokerTableView {
   private backMat: THREE.MeshStandardMaterial;
   private chipMats = new Map<number, THREE.MeshStandardMaterial>();
   private cardGeo = new THREE.PlaneGeometry(CARD_W, CARD_H);
+  private boardGeo = new THREE.PlaneGeometry(BOARD_W, BOARD_H);
   private chipGeo = new THREE.CylinderGeometry(CHIP_R, CHIP_R, CHIP_H, 18);
   private myCardGroup: THREE.Group | undefined;
   private peekT = 0;
@@ -104,15 +108,15 @@ export class PokerTableView {
 
     // Dealer: shoe, chip tray, and the NPC avatar on a stool.
     const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.19), new THREE.MeshStandardMaterial({ color: "#0f0f12", roughness: 0.3 }));
-    shoe.position.set(0.55, this.tableY + 0.06, T.halfWidth - 0.22);
+    shoe.position.set(0.75, this.tableY + 0.06, T.halfWidth - 0.25);
     this.group.add(shoe);
     const tray = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.14), new THREE.MeshStandardMaterial({ color: "#1a1a1d", roughness: 0.4 }));
-    tray.position.set(-0.2, this.tableY + 0.045, T.halfWidth - 0.2);
+    tray.position.set(-0.2, this.tableY + 0.045, T.halfWidth - 0.24);
     this.group.add(tray);
     for (let i = 0; i < 5; i++) {
       const d = CHIP_DENOMS[i]!;
       const stack = this.chipStack(d.value, 20);
-      stack.position.set(-0.4 + i * 0.1, this.tableY + 0.06, T.halfWidth - 0.2);
+      stack.position.set(-0.4 + i * 0.1, this.tableY + 0.06, T.halfWidth - 0.24);
       this.group.add(stack);
     }
     this.dealer = new Avatar("Dealer", "#15151a");
@@ -141,7 +145,7 @@ export class PokerTableView {
       el.className = "label poker-seat-label";
       const obj = new CSS2DObject(el);
       const dir = new THREE.Vector2(s.x - cx, s.z - cz).normalize();
-      const p = stadiumPoint(dir, T.halfLength - 0.32, T.halfWidth - 0.32);
+      const p = stadiumPoint(dir, T.halfLength - 0.36, T.halfWidth - 0.36);
       obj.position.set(p.x, this.tableY + 0.02, p.y);
       this.group.add(obj);
       this.seatLabels.push(el);
@@ -194,14 +198,14 @@ export class PokerTableView {
 
     // Community cards.
     snap.board.forEach((card, i) => {
-      const m = this.cardMesh(card, false);
-      m.position.set(-0.19 + i * 0.095, y, -0.05);
+      const m = new THREE.Mesh(this.boardGeo, this.cardMat(card));
+      m.position.set(-0.42 + i * 0.21, y + 0.004, -0.12);
       m.rotation.x = -Math.PI / 2;
       this.dynamic.add(m);
     });
 
-    // Pot chips in the middle.
-    this.placeChips(snap.potChips, new THREE.Vector2(0, 0.18), y);
+    // Pot chips in the middle, in front of the board.
+    this.placeChips(snap.potChips, new THREE.Vector2(0, 0.32), y);
 
     this.turnRing.visible = false;
     for (const sv of snap.seats) {
@@ -216,18 +220,18 @@ export class PokerTableView {
       label.innerHTML = `<span class="poker-seat-name${sv.isTurn ? " turn" : ""}">${sv.isButton ? "<b class='btn-puck'>D</b> " : ""}${escapeHtml(sv.name)}${statusTag}</span>${sv.lastAction ? `<span class="poker-seat-action">${escapeHtml(sv.lastAction)}</span>` : ""}`;
 
       // Chips behind: on the rail edge in front of the player.
-      const behind = stadiumPoint(dir, T.halfLength - 0.2, T.halfWidth - 0.2);
+      const behind = stadiumPoint(dir, T.halfLength - 0.22, T.halfWidth - 0.22);
       this.placeChips(sv.chips, behind, y, 0.045);
 
       // Bet in front: across the betting line, towards the middle.
       if (sv.front > 0) {
-        const frontPos = stadiumPoint(dir, T.halfLength - 0.7, T.halfWidth - 0.6);
+        const frontPos = stadiumPoint(dir, T.halfLength - 0.95, T.halfWidth - 0.8);
         this.placeChips(sv.frontChips, frontPos, y, 0.04);
       }
 
       // Hole cards: mine face-down in front of me (peekable), others as backs, shown cards face-up.
       if (sv.cards.length > 0 || sv.status === "in" || sv.status === "allin") {
-        const cardPos = stadiumPoint(dir, T.halfLength - 0.42, T.halfWidth - 0.4);
+        const cardPos = stadiumPoint(dir, T.halfLength - 0.5, T.halfWidth - 0.48);
         const grp = new THREE.Group();
         grp.position.set(cardPos.x, y, cardPos.y);
         grp.rotation.y = Math.atan2(-dir.x, -dir.y) + Math.PI;
@@ -236,7 +240,7 @@ export class PokerTableView {
           const card = sv.cards[i];
           const showFace = card !== undefined && !sv.faceDown && sv.index !== snap.mySeat;
           const mesh = this.cardMesh(showFace ? card : -1, !showFace);
-          mesh.position.set((i - (n - 1) / 2) * 0.05, i * 0.001, 0);
+          mesh.position.set((i - (n - 1) / 2) * 0.06, i * 0.001, 0);
           grp.add(mesh);
         }
         grp.rotation.x = -Math.PI / 2;
@@ -254,7 +258,7 @@ export class PokerTableView {
       }
 
       if (sv.isTurn) {
-        const ringPos = stadiumPoint(dir, T.halfLength - 0.55, T.halfWidth - 0.5);
+        const ringPos = stadiumPoint(dir, T.halfLength - 0.72, T.halfWidth - 0.65);
         this.turnRing.position.set(ringPos.x, y + 0.002, ringPos.y);
         this.turnRing.visible = true;
       }
@@ -363,7 +367,7 @@ function stadiumRingGeometry(a: number, b: number, width: number, height: number
 function feltTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
   c.width = 1024;
-  c.height = 700;
+  c.height = 646;
   const ctx = c.getContext("2d")!;
   ctx.fillStyle = "#0f5e3a";
   ctx.fillRect(0, 0, c.width, c.height);
@@ -381,9 +385,9 @@ function feltTexture(): THREE.CanvasTexture {
   ctx.strokeStyle = "rgba(255,255,255,0.28)";
   ctx.lineWidth = 3;
   for (let i = 0; i < 5; i++) {
-    const w = 52;
-    const h = 74;
-    ctx.strokeRect(c.width / 2 - 2.5 * 62 + i * 62 + 5, c.height / 2 - h / 2 - 18, w, h);
+    const w = 42;
+    const h = 60;
+    ctx.strokeRect(c.width / 2 - 2.5 * 47 + i * 47 + 2, c.height / 2 - h / 2 - 28, w, h);
   }
   // Centre crest.
   ctx.fillStyle = "rgba(255,230,160,0.35)";

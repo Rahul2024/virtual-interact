@@ -195,11 +195,11 @@ export const POKER_TABLE = {
   centerX: 86,
   centerZ: 0,
   /** Felt half-length along x (plus rounded ends) and half-width along z. */
-  halfLength: 1.55,
-  halfWidth: 1.05,
+  halfLength: 2.3,
+  halfWidth: 1.45,
   /** Ellipse the seats sit on. */
-  seatRx: 2.55,
-  seatRz: 2.05,
+  seatRx: 3.35,
+  seatRz: 2.55,
   /** Dealer position angle (radians, 0 = +x, counter-clockwise), seats fill the rest of the ring. */
   dealerAngle: Math.PI / 2,
   seatCount: 9,

@@ -41,6 +41,7 @@ export class PokerPanel {
   private title = el<HTMLDivElement>("poker-title");
   private dealerLine = el<HTMLDivElement>("poker-dealer");
   private myCards = el<HTMLDivElement>("poker-my-cards");
+  private boardEl = el<HTMLDivElement>("poker-board");
   private handName = el<HTMLDivElement>("poker-hand-name");
   private potInfo = el<HTMLDivElement>("poker-pot");
   private timerBar = el<HTMLDivElement>("poker-timer");
@@ -248,9 +249,14 @@ export class PokerPanel {
 
     if (!seated) return;
 
-    // My cards and hand strength.
+    // Board (always readable here, whatever the camera does), my cards and hand strength.
     const hole = me.holeCards ? [...me.holeCards] : [];
     const board = [...st.board];
+    const boardHtml = board.map(cardHtml).join("") + Array.from({ length: 5 - board.length }, () => `<span class="pcard slot"></span>`).join("");
+    if (this.boardEl.dataset.key !== boardHtml) {
+      this.boardEl.dataset.key = boardHtml;
+      this.boardEl.innerHTML = boardHtml;
+    }
     this.myCards.innerHTML = hole.length ? hole.map(cardHtml).join("") : `<span class="pcard back">?</span><span class="pcard back">?</span>`;
     if (st.practice && hole.length === 2 && hole.length + board.length >= 5) {
       this.handName.textContent = describeHand(evaluateBest([...hole, ...board]));

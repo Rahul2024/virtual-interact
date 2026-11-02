@@ -1213,6 +1213,24 @@ body {
 .poker-grid input[type="number"] {
   width: 100%;
 }
+.poker-board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at center, #126b43, #0b4a2f);
+}
+.poker-board {
+  display: flex;
+  gap: 6px;
+  min-height: 62px;
+}
+.poker-board .pcard.slot {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+}
 .poker-me {
   display: flex;
   align-items: center;

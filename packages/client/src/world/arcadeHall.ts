@@ -184,24 +184,37 @@ export function addArcadeHall(scene: THREE.Scene, colliders: Colliders): { poker
   // The poker table itself.
   const pokerTable = new PokerTableView(scene, colliders);
 
-  // Seat stools (the hub seats avatars on them).
-  const stoolMat = new THREE.MeshStandardMaterial({ color: "#5b1d27", roughness: 0.8 });
-  for (const s of POKER_SEAT_SPOTS) {
-    const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.1, 14), stoolMat);
-    seat.position.set(s.x, 0.52, s.z);
+  // Club chairs: velvet seat and back, gold legs, turned to face the table.
+  const velvet = new THREE.MeshStandardMaterial({ color: "#5b1d27", roughness: 0.85 });
+  const addChair = (x: number, z: number, rot: number, scale = 1) => {
+    const chair = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.12, 0.54), velvet);
+    seat.position.y = 0.5;
     seat.castShadow = true;
-    g.add(seat);
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 8), trimMat);
-    leg.position.set(s.x, 0.25, s.z);
-    g.add(leg);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 14), trimMat);
-    base.position.set(s.x, 0.015, s.z);
-    g.add(base);
-  }
-  // Dealer's stool.
-  const dealerStool = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.32, 0.1, 14), darkWood);
-  dealerStool.position.set(POKER_DEALER_SPOT.x, 0.6, POKER_DEALER_SPOT.z);
-  g.add(dealerStool);
+    chair.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.6, 0.1), velvet);
+    back.position.set(0, 0.86, -0.24);
+    back.castShadow = true;
+    chair.add(back);
+    for (const sx of [-0.25, 0.25]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.5), trimMat);
+      arm.position.set(sx, 0.68, 0);
+      chair.add(arm);
+      for (const sz of [-0.22, 0.22]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.46, 8), trimMat);
+        leg.position.set(sx * 0.9, 0.23, sz);
+        chair.add(leg);
+      }
+    }
+    chair.position.set(x, 0, z);
+    chair.rotation.y = rot;
+    chair.scale.setScalar(scale);
+    g.add(chair);
+  };
+  for (const s of POKER_SEAT_SPOTS) addChair(s.x, s.z, s.rot);
+
+  // Dealer's chair, a little taller.
+  addChair(POKER_DEALER_SPOT.x, POKER_DEALER_SPOT.z, POKER_DEALER_SPOT.rot, 1.1);
 
   return { pokerTable };
 }
