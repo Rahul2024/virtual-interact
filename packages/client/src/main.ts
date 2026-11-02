@@ -66,6 +66,7 @@ import { IdeasPanel } from "./ui/ideas";
 import { CinemaController, type CinemaFriendPeer } from "./ui/cinema";
 import { ActivitiesController } from "./ui/activities";
 import { PokerPanel } from "./ui/poker";
+import { PokerAudio } from "./world/pokerAudio";
 import { joinPokerTable } from "./net/poker";
 import type { PokerSeatView, PokerTableSnapshot } from "./world/pokerTable";
 import type { ChipStack } from "@vi/shared/poker";
@@ -78,6 +79,79 @@ const ideasPanel = new IdeasPanel();
 const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
 const pokerPanel = new PokerPanel();
+const pokerAudio = new PokerAudio();
+pokerPanel.setAudioState(pokerAudio.soundsOn, pokerAudio.voiceOn);
+pokerPanel.onToggleSounds = (on) => pokerAudio.setSounds(on);
+pokerPanel.onToggleVoice = (on) => pokerAudio.setVoice(on);
+window.addEventListener("pointerdown", () => pokerAudio.unlock(), { once: true });
+window.addEventListener("keydown", () => pokerAudio.unlock(), { once: true });
+
+/** The hub avatar sitting in a poker seat (me or a remote), for speech bubbles. */
+function avatarAtPokerSeat(seatIndex: number): Avatar | undefined {
+  if (!session) return undefined;
+  const seatId = pokerSeatIdFor(seatIndex);
+  if (session.me.seatId === seatId) return session.me;
+  for (const r of session.remotes.values()) if (r.avatar.seatId === seatId) return r.avatar;
+  return undefined;
+}
+
+pokerPanel.onTableEvent = (e) => {
+  switch (e.kind) {
+    case "say":
+      if (e.text) {
+        world.pokerTable.dealerSay(e.text, 5000);
+        pokerAudio.say(e.text);
+      }
+      break;
+    case "handStart":
+      pokerAudio.shuffle();
+      break;
+    case "deal":
+      setTimeout(() => pokerAudio.cardSlide(), 400);
+      setTimeout(() => pokerAudio.cardSlide(), 650);
+      break;
+    case "blind":
+      pokerAudio.chips(2);
+      break;
+    case "action": {
+      const who = e.seat !== undefined ? avatarAtPokerSeat(e.seat) : undefined;
+      const line =
+        e.action === "fold" ? "Fold" : e.action === "check" ? "Check" : e.action === "call" ? `Call ${e.amount}` : e.action === "bet" ? `Bet ${e.to}` : `Raise to ${e.to}`;
+      who?.say(e.allIn ? `${line}. All in!` : line, 3500);
+      if (e.action === "fold") pokerAudio.cardSlide();
+      else if (e.action !== "check") pokerAudio.chips(Math.min(6, Math.max(1, Math.round((e.amount ?? 0) / 25))));
+      // The dealer repeats the action aloud, as at a live table.
+      if (e.text) pokerAudio.say(e.text);
+      break;
+    }
+    case "street":
+      if (e.text) {
+        world.pokerTable.dealerSay(e.text, 4000);
+        pokerAudio.say(e.text);
+      }
+      (e.cards ?? []).forEach((_, i) => setTimeout(() => pokerAudio.cardFlip(), i * 160));
+      break;
+    case "collect":
+      pokerAudio.chips(4);
+      break;
+    case "runout":
+      if (e.text) {
+        world.pokerTable.dealerSay(e.text, 4000);
+        pokerAudio.say(e.text);
+      }
+      break;
+    case "reveal": {
+      pokerAudio.cardFlip();
+      const who = e.seat !== undefined ? avatarAtPokerSeat(e.seat) : undefined;
+      if (e.hand) who?.say(e.hand, 5000);
+      if (e.text) pokerAudio.say(e.text);
+      break;
+    }
+    case "award":
+      pokerAudio.win();
+      break;
+  }
+};
 pokerPanel.onSeated = (index) => {
   if (!session) return;
   const spot = POKER_SEAT_SPOTS[index]!;
@@ -861,6 +935,7 @@ function frame(now: number) {
       session.voice.update(now);
 
       pokerPanel.render();
+      if (pokerPanel.turnJustStarted()) pokerAudio.yourTurn();
       const pokerSnap = pokerSnapshot();
       if (pokerSnap) world.pokerTable.update(pokerSnap);
       world.pokerTable.tick(dt, pokerPanel.peeking);

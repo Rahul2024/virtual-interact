@@ -1116,6 +1116,10 @@ body {
   font-size: 11px;
   cursor: pointer;
 }
+.poker-mini.off {
+  opacity: 0.5;
+  border-style: dashed;
+}
 .poker-fair {
   padding: 8px 10px;
   border-radius: 10px;

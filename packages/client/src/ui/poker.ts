@@ -83,6 +83,14 @@ export class PokerPanel {
 
   /** Who to tell when the panel wants the avatar to sit/stand in the hub. */
   onSeated: (seatIndex: number) => void = () => {};
+  /** Every table event, for sounds, voice and speech bubbles. */
+  onTableEvent: (e: PokerEventMessage) => void = () => {};
+  /** Toggles in the header. */
+  onToggleSounds: (on: boolean) => void = () => {};
+  onToggleVoice: (on: boolean) => void = () => {};
+  private soundsBtn = el<HTMLButtonElement>("poker-sounds");
+  private voiceBtn = el<HTMLButtonElement>("poker-voice");
+  private lastTurnSeat = -1;
   onStood: () => void = () => {};
   onOpenChange: (open: boolean) => void = () => {};
 
@@ -140,6 +148,16 @@ export class PokerPanel {
       if (e.code === "KeyQ") this.peekHeld = false;
     });
     this.fairBtn.addEventListener("click", () => (this.fairBox.hidden = !this.fairBox.hidden));
+    this.soundsBtn.addEventListener("click", () => {
+      const on = this.soundsBtn.dataset.on !== "1";
+      this.setToggle(this.soundsBtn, on, "sounds");
+      this.onToggleSounds(on);
+    });
+    this.voiceBtn.addEventListener("click", () => {
+      const on = this.voiceBtn.dataset.on !== "1";
+      this.setToggle(this.voiceBtn, on, "dealer voice");
+      this.onToggleVoice(on);
+    });
     this.root.addEventListener("keydown", (e) => e.stopPropagation());
   }
 
@@ -384,7 +402,30 @@ export class PokerPanel {
     this.raiseSlider.dataset.touched = "";
   }
 
+  /** Reflect the saved preferences in the header buttons. */
+  setAudioState(sounds: boolean, voice: boolean) {
+    this.setToggle(this.soundsBtn, sounds, "sounds");
+    this.setToggle(this.voiceBtn, voice, "dealer voice");
+  }
+
+  private setToggle(btn: HTMLButtonElement, on: boolean, label: string) {
+    btn.dataset.on = on ? "1" : "0";
+    btn.textContent = `${label}: ${on ? "on" : "off"}`;
+    btn.classList.toggle("off", !on);
+  }
+
+  /** True on the frame your turn begins (for the "your turn" sound). */
+  turnJustStarted(): boolean {
+    const st = this.room?.state;
+    if (!st) return false;
+    const myTurn = st.phase === "acting" && st.toAct === this.seatIndex && this.seatIndex >= 0;
+    const started = myTurn && this.lastTurnSeat !== st.toAct;
+    this.lastTurnSeat = st.phase === "acting" ? st.toAct : -1;
+    return started;
+  }
+
   private onEvent(e: PokerEventMessage) {
+    this.onTableEvent(e);
     if (e.kind === "handStart") this.addHistory(`— Hand #${e.handNo} —`, "sep");
     if (e.text) this.addHistory(e.text, e.kind === "say" ? "say" : "");
     if (e.kind === "award" && e.awards) {

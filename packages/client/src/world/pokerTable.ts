@@ -153,6 +153,11 @@ export class PokerTableView {
     colliders.boxes.push({ x: cx, z: cz, hw: T.halfLength + T.halfWidth + 0.25, hd: T.halfWidth + 0.25 });
   }
 
+  /** Speech bubble over the dealer's head. */
+  dealerSay(text: string, ms = 5000) {
+    this.dealer.say(text, ms);
+  }
+
   /** Animate the dealer and the peek; cheap. */
   tick(dt: number, peeking: boolean) {
     this.dealer.update(dt);
