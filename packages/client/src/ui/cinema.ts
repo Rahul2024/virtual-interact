@@ -71,14 +71,18 @@ export interface CinemaFriendPeer {
  */
 export class CinemaController {
   readonly screenCanvas: HTMLCanvasElement;
-  readonly standbyTexture: THREE.CanvasTexture;
-  readonly videoTexture: THREE.VideoTexture;
+  readonly screenTexture: THREE.CanvasTexture;
 
   private ctx: CanvasRenderingContext2D;
   private video: HTMLVideoElement;
   private posterImg: HTMLImageElement;
   private posterReady = false;
   private standbyDirty = true;
+  private lastDrawnVideoTime = -1;
+  private lastScrubSec = -1;
+  private lastScrubMax = -1;
+  private lastSentYtVolume = -1;
+  private lastProjBounds = "";
 
   // Synced state from HubState
   private movieUrl = "";
@@ -179,15 +183,6 @@ export class CinemaController {
   onFriendAccept: (fromClientId: string) => void = () => {};
   onFriendRemove: (friendClientId: string) => void = () => {};
   onModalOpenChange: (open: boolean) => void = () => {};
-  onScreenTextureChange?: (tex: THREE.Texture, accentColor?: string) => void;
-
-  get screenTexture(): THREE.Texture {
-    return !this.usingEmbed && this.videoReady && this.movieUrl ? this.videoTexture : this.standbyTexture;
-  }
-
-  updateActiveScreenTexture() {
-    this.onScreenTextureChange?.(this.screenTexture, this.movieUrl ? "#38bdf8" : "#5b8def");
-  }
 
   constructor() {
     this.screenCanvas = document.createElement("canvas");
@@ -199,11 +194,11 @@ export class CinemaController {
     this.overlayCanvas.height = 720;
     this.overlayCtx = this.overlayCanvas.getContext("2d")!;
 
-    this.standbyTexture = new THREE.CanvasTexture(this.screenCanvas);
-    this.standbyTexture.colorSpace = THREE.SRGBColorSpace;
-    this.standbyTexture.minFilter = THREE.LinearFilter;
-    this.standbyTexture.magFilter = THREE.LinearFilter;
-    this.standbyTexture.generateMipmaps = false;
+    this.screenTexture = new THREE.CanvasTexture(this.screenCanvas);
+    this.screenTexture.colorSpace = THREE.SRGBColorSpace;
+    this.screenTexture.minFilter = THREE.LinearFilter;
+    this.screenTexture.magFilter = THREE.LinearFilter;
+    this.screenTexture.generateMipmaps = false;
 
     this.posterImg = new Image();
     this.posterImg.crossOrigin = "anonymous";
@@ -224,12 +219,6 @@ export class CinemaController {
     this.video.volume = 0;
     this.video.muted = true;
 
-    this.videoTexture = new THREE.VideoTexture(this.video);
-    this.videoTexture.colorSpace = THREE.SRGBColorSpace;
-    this.videoTexture.minFilter = THREE.LinearFilter;
-    this.videoTexture.magFilter = THREE.LinearFilter;
-    this.videoTexture.generateMipmaps = false;
-
     const handleVideoDuration = () => {
       if (isFinite(this.video.duration) && this.video.duration > 1) {
         const d = Math.round(this.video.duration);
@@ -245,7 +234,6 @@ export class CinemaController {
     this.video.addEventListener("canplay", () => {
       this.videoReady = true;
       handleVideoDuration();
-      this.updateActiveScreenTexture();
       if (!this.paused && !this.usingEmbed && this.inCinemaEarshot) {
         void this.video.play().catch(() => {});
       }
@@ -474,6 +462,8 @@ export class CinemaController {
     this.screenCanvas.height = resH;
     this.overlayCanvas.width = resW;
     this.overlayCanvas.height = resH;
+    this.standbyDirty = true;
+    this.lastDrawnVideoTime = -1;
     this.screenTexture.dispose();
     this.screenTexture.needsUpdate = true;
 
@@ -534,7 +524,6 @@ export class CinemaController {
     if (changedHost) {
       this.updateHostPermissionsUI();
     }
-    this.updateActiveScreenTexture();
 
     this.applyImmediateSyncSeek(this.getCurrentElapsedSec(), this.paused);
   }
@@ -608,6 +597,8 @@ export class CinemaController {
   private loadMovieUrl(url: string) {
     this.posterReady = false;
     this.standbyDirty = true;
+    this.lastDrawnVideoTime = -1;
+    this.lastSentYtVolume = -1;
     if (!url) {
       this.usingEmbed = false;
       this.isYouTubeEmbed = false;
@@ -617,7 +608,6 @@ export class CinemaController {
       this.video.removeAttribute("src");
       this.videoReady = false;
       this.embedHost.hidden = true;
-      this.updateActiveScreenTexture();
       return;
     }
 
@@ -642,7 +632,6 @@ export class CinemaController {
         this.ytIframe.src = "";
       }
       this.syncStageVisibility();
-      this.updateActiveScreenTexture();
       return;
     }
 
@@ -662,14 +651,12 @@ export class CinemaController {
         this.ytIframe.src = url;
       }
       this.syncStageVisibility();
-      this.updateActiveScreenTexture();
     };
     this.video.src = url;
     this.video.load();
     if (!this.paused && this.inCinemaEarshot) {
       void this.video.play().catch(() => {});
     }
-    this.updateActiveScreenTexture();
   }
 
   private syncStageVisibility() {
@@ -682,26 +669,43 @@ export class CinemaController {
     }
   }
 
+  private applyEmbedHostBounds(cls: string, left: number, top: number, width: number, height: number) {
+    this.embedHost.hidden = false;
+    const key = `${cls}|${left}|${top}|${width}|${height}`;
+    if (key === this.lastProjBounds) return;
+    this.lastProjBounds = key;
+    this.embedHost.className = cls;
+    this.embedHost.style.left = `${left}px`;
+    this.embedHost.style.top = `${top}px`;
+    this.embedHost.style.width = `${width}px`;
+    this.embedHost.style.height = `${height}px`;
+  }
+
   updateScreenProjection(camera: THREE.PerspectiveCamera, isJoinScreenOpen: boolean) {
     if (!this.usingEmbed || !this.inCinemaEarshot || isJoinScreenOpen || !this.friendsModal.hidden) {
-      this.embedHost.hidden = true;
+      if (!this.embedHost.hidden) {
+        this.embedHost.hidden = true;
+        this.lastProjBounds = "";
+      }
       return;
     }
 
     const modeClass = this.expanded ? "mode-expanded" : "mode-minimized";
     const interactiveClass = this.interactivePlayerGear ? " interactive" : "";
+    const fullClass = `cinema-embed-host ${modeClass}${interactiveClass}`;
 
     if (this.expanded) {
       this.overlayCanvas.hidden = true;
       this.overlayEmbedSlot.hidden = false;
       const rect = this.overlayEmbedSlot.getBoundingClientRect();
       if (rect.width > 10 && rect.height > 10) {
-        this.embedHost.hidden = false;
-        this.embedHost.className = `cinema-embed-host ${modeClass}${interactiveClass}`;
-        this.embedHost.style.left = `${Math.round(rect.left)}px`;
-        this.embedHost.style.top = `${Math.round(rect.top)}px`;
-        this.embedHost.style.width = `${Math.round(rect.width)}px`;
-        this.embedHost.style.height = `${Math.round(rect.height)}px`;
+        this.applyEmbedHostBounds(
+          fullClass,
+          Math.round(rect.left),
+          Math.round(rect.top),
+          Math.round(rect.width),
+          Math.round(rect.height),
+        );
       }
       return;
     }
@@ -712,8 +716,9 @@ export class CinemaController {
     const cz = CINEMA_HALL.screenZ;
 
     const distZ = camera.position.z - cz;
-    if (distZ < 1.5 || distZ > 32) {
+    if (distZ < 1.5 || distZ > 56) {
       this.embedHost.hidden = true;
+      this.lastProjBounds = "";
       return;
     }
 
@@ -735,6 +740,7 @@ export class CinemaController {
       this.cornerVec.set(x, y, z).project(camera);
       if (this.cornerVec.z > 1 || this.cornerVec.z < -1) {
         this.embedHost.hidden = true;
+        this.lastProjBounds = "";
         return;
       }
       const sx = (this.cornerVec.x * 0.5 + 0.5) * vw;
@@ -749,15 +755,17 @@ export class CinemaController {
     const h = maxY - minY;
     if (w < 90 || h < 50 || maxX < 0 || minX > vw || maxY < 0 || minY > vh) {
       this.embedHost.hidden = true;
+      this.lastProjBounds = "";
       return;
     }
 
-    this.embedHost.hidden = false;
-    this.embedHost.className = `cinema-embed-host ${modeClass}${interactiveClass}`;
-    this.embedHost.style.left = `${Math.round(minX)}px`;
-    this.embedHost.style.top = `${Math.round(minY)}px`;
-    this.embedHost.style.width = `${Math.round(w)}px`;
-    this.embedHost.style.height = `${Math.round(h)}px`;
+    this.applyEmbedHostBounds(
+      fullClass,
+      Math.round(minX),
+      Math.round(minY),
+      Math.round(w),
+      Math.round(h),
+    );
   }
 
   setExpanded(expanded: boolean) {
@@ -787,8 +795,10 @@ export class CinemaController {
     peers: CinemaFriendPeer[];
   }) {
     const pendingCount = this.incomingRequests.size;
-    this.friendsCountBadge.textContent =
-      pendingCount > 0 ? `${opts.friendsCount} · ${pendingCount}!` : String(opts.friendsCount);
+    const badgeStr = pendingCount > 0 ? `${opts.friendsCount} · ${pendingCount}!` : String(opts.friendsCount);
+    if (this.friendsCountBadge.textContent !== badgeStr) {
+      this.friendsCountBadge.textContent = badgeStr;
+    }
     this.friendsBtn.classList.toggle("has-pending", pendingCount > 0);
 
     const nowInEarshot = opts.inCinema || opts.isSeated || this.expanded;
@@ -797,12 +807,13 @@ export class CinemaController {
       ? 1
       : !nowInEarshot
         ? 0
-        : distToScreen <= 14
+        : distToScreen <= 34
           ? 1
-          : Math.max(0, 1 - (distToScreen - 14) / 10);
+          : Math.max(0, 1 - (distToScreen - 34) / 18);
 
     if (nowInEarshot !== this.inCinemaEarshot) {
       this.inCinemaEarshot = nowInEarshot;
+      this.lastSentYtVolume = -1;
       if (!nowInEarshot) {
         this.video.muted = true;
         this.video.volume = 0;
@@ -811,6 +822,7 @@ export class CinemaController {
           this.ytIframe.src = "";
         }
         this.embedHost.hidden = true;
+        this.lastProjBounds = "";
       } else if (this.movieUrl) {
         if (this.usingEmbed) {
           const ytId = extractYouTubeId(this.movieUrl);
@@ -831,9 +843,14 @@ export class CinemaController {
     this.applyVolume();
 
     const showDock = (opts.inCinema || opts.isSeated) && !this.expanded;
-    this.dock.hidden = !showDock;
-    this.sitBtn.textContent = opts.isSeated ? "🪑 Stand (E)" : "🪑 Sit (E)";
-    this.sitBtn.classList.toggle("active", opts.isSeated);
+    if (this.dock.hidden !== !showDock) {
+      this.dock.hidden = !showDock;
+    }
+    const wantSitText = opts.isSeated ? "🪑 Stand (E)" : "🪑 Sit (E)";
+    if (this.sitBtn.textContent !== wantSitText) {
+      this.sitBtn.textContent = wantSitText;
+      this.sitBtn.classList.toggle("active", opts.isSeated);
+    }
 
     if (!this.friendsModal.hidden) {
       this.renderFriendsModalLists(opts.peers);
@@ -844,7 +861,8 @@ export class CinemaController {
     if (!this.inCinemaEarshot || this.distanceGain <= 0.01) {
       this.video.muted = true;
       this.video.volume = 0;
-      if (this.isYouTubeEmbed && this.ytIframe.src) {
+      if (this.isYouTubeEmbed && this.ytIframe.src && this.lastSentYtVolume !== 0) {
+        this.lastSentYtVolume = 0;
         this.sendYouTubeCommand("setVolume", [0]);
       }
       return;
@@ -854,7 +872,11 @@ export class CinemaController {
     const finalVol = Math.max(0, Math.min(1, this.userVolume * this.distanceGain * duckFactor));
     this.video.volume = finalVol;
     if (this.isYouTubeEmbed && this.ytIframe.src) {
-      this.sendYouTubeCommand("setVolume", [Math.round(finalVol * 100)]);
+      const volInt = Math.round(finalVol * 100);
+      if (volInt !== this.lastSentYtVolume) {
+        this.lastSentYtVolume = volInt;
+        this.sendYouTubeCommand("setVolume", [volInt]);
+      }
     }
   }
 
@@ -865,62 +887,64 @@ export class CinemaController {
     const currentPos = detectedDur > 0 ? Math.min(detectedDur, elapsedSec % detectedDur) : elapsedSec;
 
     if (!this.isDraggingScrub) {
-      const maxStr = String(Math.ceil(sliderMax));
-      const valStr = String(Math.floor(currentPos));
-      this.dockScrub.max = maxStr;
-      this.dockScrub.value = valStr;
-      this.overlayScrub.max = maxStr;
-      this.overlayScrub.value = valStr;
+      const maxInt = Math.ceil(sliderMax);
+      const valInt = Math.floor(currentPos);
+      if (maxInt !== this.lastScrubMax || valInt !== this.lastScrubSec) {
+        this.lastScrubMax = maxInt;
+        this.lastScrubSec = valInt;
+        const maxStr = String(maxInt);
+        const valStr = String(valInt);
+        this.dockScrub.max = maxStr;
+        this.dockScrub.value = valStr;
+        this.overlayScrub.max = maxStr;
+        this.overlayScrub.value = valStr;
 
-      const timeDisplay = !this.movieUrl
-        ? "00:00 / 00:00"
-        : detectedDur > 0
-          ? `${fmtTime(currentPos)} / ${fmtTime(detectedDur)}`
-          : `${fmtTime(currentPos)} / --:--`;
-      this.dockTime.textContent = timeDisplay;
-      this.overlayTime.textContent = timeDisplay;
+        const timeDisplay = !this.movieUrl
+          ? "00:00 / 00:00"
+          : detectedDur > 0
+            ? `${fmtTime(valInt)} / ${fmtTime(detectedDur)}`
+            : `${fmtTime(valInt)} / --:--`;
+        this.dockTime.textContent = timeDisplay;
+        this.overlayTime.textContent = timeDisplay;
+      }
     }
 
-    const hasDirectVideo = Boolean(this.movieUrl && this.videoReady && !this.usingEmbed);
-
-    if (hasDirectVideo) {
-      if (
-        this.inCinemaEarshot &&
-        !this.paused &&
-        isFinite(this.video.duration) &&
-        this.video.duration > 0
-      ) {
-        const targetTime = elapsedSec % this.video.duration;
-        const drift = this.video.currentTime - targetTime;
-        if (Math.abs(drift) > 4.5) {
-          try {
-            this.video.currentTime = targetTime;
-          } catch {
-            /* ignore */
-          }
-          this.video.playbackRate = 1.0;
-        } else if (drift < -0.35) {
-          this.video.playbackRate = 1.05; // gently catch up without dumping buffers
-        } else if (drift > 0.35) {
-          this.video.playbackRate = 0.95; // gently slow down
-        } else {
-          this.video.playbackRate = 1.0;
+    if (
+      this.inCinemaEarshot &&
+      this.videoReady &&
+      !this.usingEmbed &&
+      !this.paused &&
+      isFinite(this.video.duration) &&
+      this.video.duration > 0
+    ) {
+      const targetTime = elapsedSec % this.video.duration;
+      if (Math.abs(this.video.currentTime - targetTime) > 2.5) {
+        try {
+          this.video.currentTime = targetTime;
+        } catch {
+          /* ignore */
         }
       }
+    }
 
-      // If expanded overlay is open, render video frame directly onto overlay canvas
-      if (this.expanded && this.video.readyState >= 2) {
-        this.overlayCtx.drawImage(this.video, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+    const w = this.screenCanvas.width;
+    const h = this.screenCanvas.height;
+    const ctx = this.ctx;
+
+    if (this.movieUrl && this.videoReady && !this.usingEmbed && this.video.readyState >= 2) {
+      const vTime = this.video.currentTime;
+      if (vTime !== this.lastDrawnVideoTime) {
+        this.lastDrawnVideoTime = vTime;
+        ctx.drawImage(this.video, 0, 0, w, h);
+        this.screenTexture.needsUpdate = true;
+        if (this.expanded) {
+          this.overlayCtx.drawImage(this.screenCanvas, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+        }
       }
-    } else {
-      // Standby or Embed mode: only render when dirty to save CPU & GPU bus bandwidth!
-      if (this.standbyDirty) {
-        const w = this.screenCanvas.width;
-        const h = this.screenCanvas.height;
-        this.drawStandbyScreen(this.ctx, w, h);
-        this.standbyTexture.needsUpdate = true;
-        this.standbyDirty = false;
-      }
+    } else if (this.standbyDirty) {
+      this.drawStandbyScreen(ctx, w, h);
+      this.screenTexture.needsUpdate = true;
+      this.standbyDirty = false;
       if (this.expanded && !this.usingEmbed) {
         this.overlayCtx.drawImage(this.screenCanvas, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
       }

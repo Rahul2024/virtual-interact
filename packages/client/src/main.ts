@@ -69,9 +69,6 @@ const ideasPanel = new IdeasPanel();
 const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
 world.setScreenTexture(cinema.screenTexture);
-cinema.onScreenTextureChange = (tex, accent) => {
-  world.setScreenTexture(tex, accent);
-};
 
 // Between the north and east paths, facing the fountain.
 const ideaWall = new IdeaWall(world.scene, world.colliders, 12.5, -12.5);

@@ -527,6 +527,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     },
     resize,
     render() {
+      dungeonRig.group.visible = camera.position.z > 15;
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
     },
@@ -1353,12 +1354,6 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
         flameOrb.position.set(cx + side * (segHalfW - 0.25), y0 + 3.95, z);
         g.add(bracket, flameOrb);
       }
-
-      if ((z - z0) % 24 === 6) {
-        const sconceLight = new THREE.PointLight(sconceColor, 2.9, 26, 1.4);
-        sconceLight.position.set(cx, y0 + 4.6, z);
-        g.add(sconceLight);
-      }
     }
   };
 
@@ -1385,10 +1380,7 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
     const stairCeil = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 2.8, 1.2, z1 - z0 + 2), wallBrickMat);
     stairCeil.position.set(cx, y1 + 6.9, (z0 + z1) / 2);
     g.add(stairCeil);
-
-    const stairLight = new THREE.PointLight(tintColor, 2.6, 22, 1.4);
-    stairLight.position.set(cx, (y0 + y1) / 2 + 4.2, (z0 + z1) / 2);
-    g.add(stairLight);
+    void tintColor;
   };
 
   // =========================================================================
@@ -1805,6 +1797,7 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   });
 
   return {
+    group: g,
     update(view: DungeonView) {
       const {
         dungeonWing,
@@ -2026,10 +2019,6 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
       heads.push(skull);
     }
 
-    const bossAura = new THREE.PointLight("#f97316", 3.6, 18, 1.4);
-    bossAura.position.set(0, 3.8, 1.5);
-    group.add(bossAura);
-
     return {
       group,
       species,
@@ -2235,10 +2224,6 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
   marqueeFace.position.set(0, 9.8, -24.38);
   group.add(marqueeFace);
 
-  const marqueeLight = new THREE.PointLight("#f59e0b", 3.2, 24, 1.4);
-  marqueeLight.position.set(0, 9.8, -23.4);
-  group.add(marqueeLight);
-
   // 3. Fully Enclosed Walls & Acoustic Ceiling Roof
   const hallLen = Math.abs(CINEMA_HALL.minZ - CINEMA_HALL.maxZ); // 48.5m
   const midZ = (CINEMA_HALL.minZ + CINEMA_HALL.maxZ) / 2; // -50.25m
@@ -2262,12 +2247,6 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
       const sconce = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), neonGoldMat);
       sconce.position.set(side * (halfW - 0.75), 4.8, sz);
       group.add(sconce);
-
-      if ((sz + 32) % 14 === 0) {
-        const sconceLight = new THREE.PointLight("#ffae42", 1.8, 18, 1.5);
-        sconceLight.position.set(side * (halfW - 1.2), 5.0, sz);
-        group.add(sconceLight);
-      }
     }
   }
 
@@ -2371,12 +2350,10 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
 
     const cushion = new THREE.Mesh(seatGeo, cushionMat);
     cushion.position.y = 0.44;
-    cushion.castShadow = cushion.receiveShadow = true;
     chair.add(cushion);
 
     const back = new THREE.Mesh(backGeo, cushionMat);
     back.position.set(0, 0.84, 0.32);
-    back.castShadow = back.receiveShadow = true;
     chair.add(back);
 
     for (const ax of [-0.46, 0.46]) {
