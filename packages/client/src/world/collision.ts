@@ -18,6 +18,8 @@ export interface BoxCollider {
 export class Colliders {
   readonly circles: CircleCollider[] = [];
   readonly boxes: BoxCollider[] = [];
+  /** Boxes that come and go with game state (dungeon doors). Replaced wholesale each frame. */
+  dynamic: BoxCollider[] = [];
 
   /**
    * Pushes a point with the given radius out of every collider and the world
@@ -35,7 +37,17 @@ export class Colliders {
         pos.z = c.z + (dz / d) * min;
       }
     }
-    for (const b of this.boxes) {
+    this.resolveBoxes(this.boxes, pos, radius);
+    this.resolveBoxes(this.dynamic, pos, radius);
+    const limit = WORLD.half - radius;
+    if (pos.x > limit) pos.x = limit;
+    if (pos.x < -limit) pos.x = -limit;
+    if (pos.z > limit) pos.z = limit;
+    if (pos.z < -limit) pos.z = -limit;
+  }
+
+  private resolveBoxes(boxes: BoxCollider[], pos: { x: number; z: number }, radius: number): void {
+    for (const b of boxes) {
       const hw = b.hw + radius;
       const hd = b.hd + radius;
       const dx = pos.x - b.x;
@@ -47,10 +59,5 @@ export class Colliders {
         else pos.z = b.z + Math.sign(dz || 1) * hd;
       }
     }
-    const limit = WORLD.half - radius;
-    if (pos.x > limit) pos.x = limit;
-    if (pos.x < -limit) pos.x = -limit;
-    if (pos.z > limit) pos.z = limit;
-    if (pos.z < -limit) pos.z = -limit;
   }
 }

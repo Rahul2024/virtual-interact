@@ -1430,12 +1430,14 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   }
 
   // Waterfalls pouring from Wall Grates & Dripping Ceiling Icicles at z = 138, 152, 166
-  for (const wz of [138, 152, 166]) {
+  // The curtain is drawn where the drip actually douses torches (one side per row).
+  BRICK_DUNGEON.grateZs.forEach((wz, gi) => {
+    const dripX = cx + (gi % 2 === 1 ? 1 : -1) * BRICK_DUNGEON.grateDripX;
     const waterfallCurtain = new THREE.Mesh(
-      new THREE.BoxGeometry(9.5, 6.2, 0.55),
+      new THREE.BoxGeometry(BRICK_DUNGEON.grateDripHalfW * 2, 6.2, 0.55),
       new THREE.MeshBasicMaterial({ color: "#7dd3fc", transparent: true, opacity: 0.42 }),
     );
-    waterfallCurtain.position.set(cx, 3.1, wz);
+    waterfallCurtain.position.set(dripX, 3.1, wz);
     g.add(waterfallCurtain);
 
     for (let ix = -8; ix <= 8; ix += 4) {
@@ -1444,16 +1446,16 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
       icicle.position.set(cx + ix, 5.8, wz);
       g.add(icicle);
     }
-  }
+  });
 
-  // Cracked Frost-Slab Booby Traps (z = 126, 175, 181)
-  const slabRows = [126, 175, 181];
+  // Cracked Frost-Slab Booby Traps
   const slabPairs: Array<{ left: THREE.Mesh; right: THREE.Mesh; rowIdx: number }> = [];
-  slabRows.forEach((rz, rIdx) => {
-    const leftSlab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.16, 2.4), crackedSlabMat);
-    leftSlab.position.set(cx - 2.6, 0.08, rz);
-    const rightSlab = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.16, 2.4), intactSlabMat);
-    rightSlab.position.set(cx + 2.6, 0.08, rz);
+  const slabGeo = new THREE.BoxGeometry(BRICK_DUNGEON.slabHalfW * 2, 0.16, BRICK_DUNGEON.slabHalfD * 2);
+  BRICK_DUNGEON.slabRowZs.forEach((rz, rIdx) => {
+    const leftSlab = new THREE.Mesh(slabGeo, crackedSlabMat);
+    leftSlab.position.set(cx - BRICK_DUNGEON.slabCenterX, 0.08, rz);
+    const rightSlab = new THREE.Mesh(slabGeo, intactSlabMat);
+    rightSlab.position.set(cx + BRICK_DUNGEON.slabCenterX, 0.08, rz);
     g.add(leftSlab, rightSlab);
     slabPairs.push({ left: leftSlab, right: rightSlab, rowIdx: rIdx });
   });
@@ -1489,8 +1491,13 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   leverEastRod.position.set(cx + 5.2, 0.8, BRICK_DUNGEON.junctionZ);
   g.add(leverWestBase, leverWestRod, leverEastBase, leverEastRod);
 
-  const shiftingBrickWall = new THREE.Mesh(new THREE.BoxGeometry(15.5, 6.2, 1.4), shortWallBrickMat);
-  shiftingBrickWall.position.set(cx + 8.5, 3.1, 190.5);
+  const partitionW = BRICK_DUNGEON.partitionOuterX - BRICK_DUNGEON.partitionInnerX;
+  const partitionCenterOffset = BRICK_DUNGEON.partitionInnerX + partitionW / 2;
+  const shiftingBrickWall = new THREE.Mesh(
+    new THREE.BoxGeometry(partitionW, 6.2, BRICK_DUNGEON.partitionHalfD * 2),
+    shortWallBrickMat,
+  );
+  shiftingBrickWall.position.set(cx + partitionCenterOffset, 3.1, BRICK_DUNGEON.partitionZ);
   g.add(shiftingBrickWall);
 
   // 3-Chest Frost Mimic Alcove at z = 201.5 & Secret Sliding Brick Bookcase at z = 210
@@ -1499,11 +1506,11 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
     teethGroup: THREE.Group;
     tongueMesh: THREE.Mesh;
   }> = [];
-  const chestXPositions = [cx - 7.5, cx, cx + 7.5];
+  const chestXPositions = BRICK_DUNGEON.chestXs.map((x) => cx + x);
 
   chestXPositions.forEach((chX) => {
     const chestGroup = new THREE.Group();
-    chestGroup.position.set(chX, 0, 201.5);
+    chestGroup.position.set(chX, 0, BRICK_DUNGEON.chestZ);
 
     const dais = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.28, 2.2), intactSlabMat);
     dais.position.y = 0.14;
@@ -1607,11 +1614,12 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   webZPositions.forEach((wz) => {
     const webGroup = new THREE.Group();
     webGroup.position.set(cx, y2, wz);
-    const mainSheet = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 - 2, 5.8), webMat);
+    // Only the centre lane is webbed; the galleries past webHalfW stay clear.
+    const mainSheet = new THREE.Mesh(new THREE.PlaneGeometry(BRICK_DUNGEON.webHalfW * 2, 5.8), webMat);
     mainSheet.position.y = 2.9;
     webGroup.add(mainSheet);
     for (let a = 0; a < 6; a++) {
-      const strand = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 - 1, 0.08, 0.08), webMat);
+      const strand = new THREE.Mesh(new THREE.BoxGeometry(BRICK_DUNGEON.webHalfW * 2 + 0.6, 0.08, 0.08), webMat);
       strand.position.y = 3.0;
       strand.rotation.z = (a / 6) * Math.PI;
       webGroup.add(strand);
@@ -1636,8 +1644,8 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   });
 
   // Rolling Fire-Boulder in the Central Groove (z = 280..314)
-  const fireBoulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(2.6, 1), magmaMat);
-  fireBoulderMesh.position.set(cx, y2 + 2.6, BRICK_DUNGEON.boulderEndZ);
+  const fireBoulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(BRICK_DUNGEON.boulderRadius, 1), magmaMat);
+  fireBoulderMesh.position.set(cx, y2 + BRICK_DUNGEON.boulderRadius, BRICK_DUNGEON.boulderEndZ);
   fireBoulderMesh.castShadow = true;
   g.add(fireBoulderMesh);
 
@@ -1664,7 +1672,7 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   chasmVoid.position.set(cx, y3 - 3.5, 354);
   g.add(chasmVoid);
 
-  const centralBridge = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.45, 29), intactSlabMat);
+  const centralBridge = new THREE.Mesh(new THREE.BoxGeometry(BRICK_DUNGEON.chasmBridgeHalfW * 2, 0.45, 29), intactSlabMat);
   centralBridge.position.set(cx, y3 + 0.15, 354);
   centralBridge.receiveShadow = true;
   g.add(centralBridge);
@@ -1677,12 +1685,17 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   }
 
   // Parallel Iron-Bar Corridors (z = 372..392), Loose Brick Switches (z = 382) & Portcullis Gates (z = 388)
-  for (let z = 372; z <= 392; z += 1.4) {
+  for (let z = BRICK_DUNGEON.ironBarsStartZ; z <= BRICK_DUNGEON.ironBarsEndZ; z += 1.4) {
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 6.2, 8), ironMat);
     bar.position.set(cx, y3 + 3.1, z);
     g.add(bar);
   }
-  colliders.boxes.push({ x: cx, z: 382, hw: 0.4, hd: 10.0 });
+  colliders.boxes.push({
+    x: cx,
+    z: (BRICK_DUNGEON.ironBarsStartZ + BRICK_DUNGEON.ironBarsEndZ) / 2,
+    hw: BRICK_DUNGEON.ironBarsHalfW,
+    hd: (BRICK_DUNGEON.ironBarsEndZ - BRICK_DUNGEON.ironBarsStartZ) / 2,
+  });
 
   const switchMat = standard("#a855f7", { emissive: "#9333ea", emissiveIntensity: 1.2 });
   const looseBrickWest = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.95), switchMat);
@@ -1691,15 +1704,18 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   looseBrickEast.position.set(cx + hw - 0.45, y3 + 1.6, BRICK_DUNGEON.switchZ);
   g.add(looseBrickWest, looseBrickEast);
 
+  // Each gate fills its half of the hallway, x from gateInnerX out to the wall.
+  const gateW = hw - BRICK_DUNGEON.gateInnerX;
+  const gateCenterOffset = BRICK_DUNGEON.gateInnerX + gateW / 2;
   const buildPortcullis = (gateCenterX: number) => {
     const gateGroup = new THREE.Group();
     gateGroup.position.set(gateCenterX, y3, BRICK_DUNGEON.gateZ);
-    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(17.5, 0.38, 0.38), ironMat);
+    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(gateW, 0.38, 0.38), ironMat);
     topBeam.position.y = 5.6;
-    const midBeam = new THREE.Mesh(new THREE.BoxGeometry(17.5, 0.3, 0.38), ironMat);
+    const midBeam = new THREE.Mesh(new THREE.BoxGeometry(gateW, 0.3, 0.38), ironMat);
     midBeam.position.y = 2.8;
     gateGroup.add(topBeam, midBeam);
-    for (let bx = -8.0; bx <= 8.0; bx += 1.15) {
+    for (let bx = -gateW / 2 + 0.5; bx <= gateW / 2 - 0.5; bx += 1.15) {
       const vBar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 5.8, 8), ironMat);
       vBar.position.set(bx, 2.9, 0);
       gateGroup.add(vBar);
@@ -1707,8 +1723,8 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
     g.add(gateGroup);
     return gateGroup;
   };
-  const leftPortcullis = buildPortcullis(cx - 9.2);
-  const rightPortcullis = buildPortcullis(cx + 9.2);
+  const leftPortcullis = buildPortcullis(cx - gateCenterOffset);
+  const rightPortcullis = buildPortcullis(cx + gateCenterOffset);
 
   // STAIRCASE 3 -> 4 (z = 404..420, y = +12.0m -> +18.0m)
   addAscendingStaircase(
@@ -1816,7 +1832,7 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
       }
 
       // 3. Floor 1 T-Junction Shifting Brick Wall
-      const targetWallX = dungeonWing === 1 ? cx + 8.5 : cx - 8.5;
+      const targetWallX = dungeonWing === 1 ? cx + partitionCenterOffset : cx - partitionCenterOffset;
       shiftingBrickWall.position.x += (targetWallX - shiftingBrickWall.position.x) * 0.14;
       leverWestRod.rotation.x = dungeonWing === 1 ? -0.45 : 0.45;
       leverEastRod.rotation.x = dungeonWing === 2 ? -0.45 : 0.45;

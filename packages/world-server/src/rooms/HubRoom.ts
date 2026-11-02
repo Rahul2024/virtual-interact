@@ -5,6 +5,8 @@ import {
   ANIM,
   ARCADE_MSG,
   BRICK_DUNGEON,
+  dungeonClosedDoors,
+  type WallBox,
   CAMPFIRE_BASE,
   CINEMA_MSG,
   CINEMA_SEATS,
@@ -69,6 +71,10 @@ interface Session {
   lastMoveAt: number;
   lastChatAt: number;
   lastTrapHitAt: number;
+  /** Last position that passed the dungeon wall check; where we put you back if you cross a door. */
+  lastSafeX: number;
+  lastSafeZ: number;
+  lastDoorNoticeAt: number;
   lastSnakeBiteAt: number;
   mimicStruggles: number;
   clientId: string;
@@ -532,22 +538,59 @@ export class HubRoom extends Room<{ state: HubState }> {
 
     const now = Date.now();
     const cx = BRICK_DUNGEON.centerX;
+    const D = BRICK_DUNGEON;
+
+    // Doors that are solid right now: the same boxes the client collides with.
+    const doors = dungeonClosedDoors(this.state);
 
     for (const [sid, p] of this.state.players.entries()) {
+      const sess = this.sessions.get(sid);
+      if (!sess) continue;
       if (!isInBrickDungeon(p.x, p.z)) {
         if (p.mimicTrapped !== 0) p.mimicTrapped = 0;
+        sess.lastSafeX = p.x;
+        sess.lastSafeZ = p.z;
         continue;
       }
-      const sess = this.sessions.get(sid);
-      if (!sess || now - sess.lastTrapHitAt < 1500) continue;
+
+      // ---- WALLS: always enforced, no cooldown, swept from the last safe spot ----
+      // A player who is trapped in a mimic is placed by the server; skip them.
+      // A jump far longer than a client can walk in one 50 ms tick is one of our
+      // own teleports (knockback, escape slide, mimic release): accept it as the new
+      // safe spot instead of sweeping it through every door on the way.
+      const jump = Math.hypot(p.x - sess.lastSafeX, p.z - sess.lastSafeZ);
+      if (p.mimicTrapped === 0 && jump < 4) {
+        const crossed = this.crossedDoor(doors, sess.lastSafeX, sess.lastSafeZ, p.x, p.z, PLAYER.radius);
+        // If the last safe spot is itself inside a door (the partition shifted onto you),
+        // don't pin the player there; let them walk out.
+        const stuck = crossed && this.crossedDoor(doors, sess.lastSafeX, sess.lastSafeZ, sess.lastSafeX, sess.lastSafeZ, PLAYER.radius);
+        if (crossed && !stuck) {
+          p.x = sess.lastSafeX;
+          p.z = sess.lastSafeZ;
+          if (now - sess.lastDoorNoticeAt > 2500) {
+            sess.lastDoorNoticeAt = now;
+            const cl = this.clients.find((c) => c.sessionId === sid);
+            cl?.send(MSG.notice, { text: this.doorMessage(crossed.door) } satisfies NoticeMessage);
+          }
+        } else {
+          sess.lastSafeX = p.x;
+          sess.lastSafeZ = p.z;
+        }
+      } else {
+        sess.lastSafeX = p.x;
+        sess.lastSafeZ = p.z;
+      }
+
+      // ---- HAZARDS: damage with a short grace period after each hit ----
+      if (now - sess.lastTrapHitAt < 1500) continue;
 
       // ---- FLOOR 1: FROST-FANG AQUEDUCT HALLWAY (z = 122..210) ----
-      if (p.z >= 122 && p.z <= BRICK_DUNGEON.secretWallZ) {
-        // A. Flooded Underground Ice-Water Canal (z = 133..171)
-        // Safe paths: Central Ice Stepping Stones (|x| <= 2.9) OR Outer Raised Brick Walkways (|x| >= 10.8)
-        if (p.z >= BRICK_DUNGEON.waterStartZ + 1 && p.z <= BRICK_DUNGEON.waterEndZ - 1) {
+      if (p.z >= 122 && p.z <= D.secretWallZ) {
+        // A. Flooded Underground Ice-Water Canal
+        // Safe paths: Central Ice Stepping Stones OR Outer Raised Brick Walkways
+        if (p.z >= D.waterStartZ + 1 && p.z <= D.waterEndZ - 1) {
           const ax = Math.abs(p.x - cx);
-          if (ax > 2.9 && ax < 10.8) {
+          if (ax > D.canalStoneHalfW && ax < D.canalWalkwayMinX) {
             sess.lastTrapHitAt = now;
             p.z = BRICK_DUNGEON.waterStartZ - 1.5;
             p.x = 0;
@@ -559,9 +602,11 @@ export class HubRoom extends Room<{ state: HubState }> {
             continue;
           }
 
-          // Dripping Ceiling Waterfall Grates at z = 138, 152, 166 extinguish hand-held Torches!
-          for (const gz of [138, 152, 166]) {
-            if (Math.abs(p.z - gz) < 1.2 && Math.abs(p.x - (gz === 152 ? 1.4 : -1.4)) < 1.3 && p.tool === TOOL.torch) {
+          // Dripping Ceiling Waterfall Grates extinguish hand-held Torches (drip side alternates per row)!
+          for (let gi = 0; gi < D.grateZs.length; gi++) {
+            const gz = D.grateZs[gi]!;
+            const dripX = cx + (gi % 2 === 1 ? 1 : -1) * D.grateDripX;
+            if (Math.abs(p.z - gz) < 1.2 && Math.abs(p.x - dripX) < D.grateDripHalfW && p.tool === TOOL.torch) {
               sess.lastTrapHitAt = now;
               p.tool = TOOL.none;
               const cl = this.clients.find((c) => c.sessionId === sid);
@@ -573,14 +618,13 @@ export class HubRoom extends Room<{ state: HubState }> {
           }
         }
 
-        // B. Cracked Frost-Slab Booby Traps at z = 126, 175, 181
-        const rows = [126, 175, 181];
-        for (let r = 0; r < rows.length; r++) {
-          const rz = rows[r]!;
-          if (Math.abs(p.z - rz) < 1.05) {
+        // B. Cracked Frost-Slab Booby Traps (same rows and widths the client draws)
+        for (let r = 0; r < D.slabRowZs.length; r++) {
+          const rz = D.slabRowZs[r]!;
+          if (Math.abs(p.z - rz) < D.slabHalfD) {
             const crackedOnLeft = (r + this.state.dungeonSeed) % 2 === 0;
-            const trapX = crackedOnLeft ? cx - 2.2 : cx + 2.2;
-            if (Math.abs(p.x - trapX) < 1.6) {
+            const trapX = crackedOnLeft ? cx - D.slabCenterX : cx + D.slabCenterX;
+            if (Math.abs(p.x - trapX) < D.slabHalfW) {
               sess.lastTrapHitAt = now;
               p.z = Math.max(BRICK_DUNGEON.startZ + 2, p.z - 6);
               p.energy = Math.max(10, p.energy - 16);
@@ -593,9 +637,8 @@ export class HubRoom extends Room<{ state: HubState }> {
           }
         }
 
-        // C. Sweeping Frost-Arrow Volley
-        const inWallNiche = Math.abs(p.x - cx) > 4.2;
-        if (!inWallNiche && Math.abs(p.z - this.state.arrowVolleyZ) < 1.1 && Math.abs(p.x - cx) < 2.3) {
+        // C. Sweeping Frost-Arrow Volley (central lane only; the arrows are drawn exactly this wide)
+        if (Math.abs(p.z - this.state.arrowVolleyZ) < D.arrowHalfD && Math.abs(p.x - cx) < D.arrowHalfW) {
           sess.lastTrapHitAt = now;
           p.z = Math.max(BRICK_DUNGEON.startZ + 2, p.z - 5);
           p.energy = Math.max(10, p.energy - 14);
@@ -606,60 +649,32 @@ export class HubRoom extends Room<{ state: HubState }> {
           continue;
         }
 
-        // D. Shifting Brick Partition Wall at z = 187..191
-        if (p.z >= 187 && p.z <= 191 && Math.abs(p.x - cx) < 10.5) {
-          const inWestWing = p.x < cx;
-          const westOpen = this.state.dungeonWing === 1;
-          if ((inWestWing && !westOpen) || (!inWestWing && westOpen)) {
-            sess.lastTrapHitAt = now;
-            p.z = BRICK_DUNGEON.junctionZ - 1.2;
-            const cl = this.clients.find((c) => c.sessionId === sid);
-            cl?.send(MSG.notice, {
-              text: `🧱 That brick archway is sealed! Walk through the open ${westOpen ? "West (Left)" : "East (Right)"} side or pull the Lever (E) to shift the wall!`,
-            } satisfies NoticeMessage);
-            continue;
-          }
-        }
-
-        // E. Secret Brick Bookcase Wall at z = 210 (guards the staircase to Floor 2!)
-        if (p.z >= BRICK_DUNGEON.secretWallZ - 0.9 && this.state.grimoireFound === 0) {
-          sess.lastTrapHitAt = now;
-          p.z = BRICK_DUNGEON.secretWallZ - 2.2;
-          const cl = this.clients.find((c) => c.sessionId === sid);
-          cl?.send(MSG.notice, {
-            text: "📚 The Secret Brick Bookcase blocks the Grand Staircase to Floor 2! Open the real Grimoire Chest first (watch out for Mimics!).",
-          } satisfies NoticeMessage);
-          continue;
-        }
+        // (The shifting partition and the secret bookcase are solid walls now; see the WALLS block above.)
       }
 
       // ---- FLOOR 2: CRIMSON-EMBER & SPIDER-WEB HALLWAY (z = 226..316) ----
-      if (p.z >= BRICK_DUNGEON.stairs1EndZ && p.z <= BRICK_DUNGEON.floor2EndZ) {
-        // A. Sticky Cinder-Spider Web Curtains at z = 238, 256, 274 (in central corridor |x| < 8.5)
-        const webZs = [BRICK_DUNGEON.web1Z, BRICK_DUNGEON.web2Z, BRICK_DUNGEON.web3Z];
+      if (p.z >= D.stairs1EndZ && p.z <= D.floor2EndZ) {
+        // A. Web curtains are solid walls (see above) until a torch touches them: standing
+        //    against a web with a torch burns it. No torch: you just can't pass the centre.
+        const webZs = [D.web1Z, D.web2Z, D.web3Z];
         for (let i = 0; i < webZs.length; i++) {
           const wz = webZs[i]!;
           const bit = 1 << i;
-          if ((this.state.websBurned & bit) === 0 && Math.abs(p.z - wz) < 1.1 && Math.abs(p.x - cx) < 8.5) {
-            if (p.tool === TOOL.torch) {
-              this.state.websBurned |= bit;
-              this.broadcast(MSG.notice, {
-                text: `🔥🕸️ ${p.name}'s flaming Torch burned away Spiderweb Curtain #${i + 1} on Floor 2!`,
-              } satisfies NoticeMessage);
-            } else {
-              sess.lastTrapHitAt = now;
-              p.z = wz - 2.0;
-              const cl = this.clients.find((c) => c.sessionId === sid);
-              cl?.send(MSG.notice, {
-                text: "🕸️🕷️ Caught in a sticky Cinder-Spider Web Net! Equip your 🔥 Torch (or press E) to burn the web away, or take the outer side galleries!",
-              } satisfies NoticeMessage);
-              break;
-            }
+          if (
+            (this.state.websBurned & bit) === 0 &&
+            p.tool === TOOL.torch &&
+            Math.abs(p.z - wz) < D.webHalfD + PLAYER.radius + 0.6 &&
+            Math.abs(p.x - cx) < D.webHalfW
+          ) {
+            this.state.websBurned |= bit;
+            this.broadcast(MSG.notice, {
+              text: `🔥🕸️ ${p.name}'s flaming Torch burned away Spiderweb Curtain #${i + 1} on Floor 2!`,
+            } satisfies NoticeMessage);
           }
         }
 
-        // B. Rolling Fire-Boulder in central corridor (z = 280..314, |x| < 3.2)
-        if (Math.abs(p.z - this.state.fireBoulderZ) < 1.8 && Math.abs(p.x - cx) < 3.0) {
+        // B. Rolling Fire-Boulder in the central groove
+        if (Math.abs(p.z - this.state.fireBoulderZ) < D.boulderRadius * 0.7 && Math.abs(p.x - cx) < D.boulderHitHalfW) {
           sess.lastTrapHitAt = now;
           p.z = Math.max(BRICK_DUNGEON.boulderStartZ - 2, p.z - 6);
           p.energy = Math.max(10, p.energy - 18);
@@ -672,11 +687,11 @@ export class HubRoom extends Room<{ state: HubState }> {
       }
 
       // ---- FLOOR 3: SHADOW-MANA CHASM & WOLF DEN HALLWAY (z = 332..404) ----
-      if (p.z >= BRICK_DUNGEON.stairs2EndZ && p.z <= BRICK_DUNGEON.floor3EndZ) {
-        // A. Bottomless Shadow Chasm (z = 341..367): Safe on Central Bridge (|x| <= 3.3) or Outer Catwalks (|x| >= 10.8)
-        if (p.z >= BRICK_DUNGEON.chasmStartZ + 1 && p.z <= BRICK_DUNGEON.chasmEndZ - 1) {
+      if (p.z >= D.stairs2EndZ && p.z <= D.floor3EndZ) {
+        // A. Bottomless Shadow Chasm: safe on the central bridge or the outer catwalks
+        if (p.z >= D.chasmStartZ + 1 && p.z <= D.chasmEndZ - 1) {
           const ax = Math.abs(p.x - cx);
-          if (ax > 3.3 && ax < 10.8) {
+          if (ax > D.chasmBridgeHalfW && ax < D.chasmCatwalkMinX) {
             sess.lastTrapHitAt = now;
             p.z = BRICK_DUNGEON.chasmStartZ - 1.5;
             p.x = 0;
@@ -689,19 +704,48 @@ export class HubRoom extends Room<{ state: HubState }> {
           }
         }
 
-        // B. Parallel Iron Portcullis Gates at z = 388
-        if (p.z >= BRICK_DUNGEON.gateZ - 0.9 && p.z <= BRICK_DUNGEON.gateZ + 1.5) {
-          const onLeft = p.x < cx;
-          if ((onLeft && this.state.gateLeftOpen === 0) || (!onLeft && this.state.gateRightOpen === 0)) {
-            sess.lastTrapHitAt = now;
-            p.z = BRICK_DUNGEON.gateZ - 2.2;
-            const cl = this.clients.find((c) => c.sessionId === sid);
-            cl?.send(MSG.notice, {
-              text: "⛓️🌑 The Shadow Portcullis Gate is locked! Press the Loose Brick Switch (E) on the wall to raise the gates to Floor 4!",
-            } satisfies NoticeMessage);
-          }
-        }
+        // (The portcullis gates are solid walls now; see the WALLS block above.)
       }
+    }
+  }
+
+  /**
+   * Did the segment from (x0,z0) to (x1,z1), as a disc of `radius`, touch a
+   * closed door? Swept, so a fast client can't skip a thin door between two
+   * 10 Hz updates. Returns the door hit, or undefined.
+   */
+  private crossedDoor(doors: WallBox[], x0: number, z0: number, x1: number, z1: number, radius: number): WallBox | undefined {
+    for (const d of doors) {
+      const hw = d.hw + radius;
+      const hd = d.hd + radius;
+      // Inside the expanded box at the destination?
+      if (Math.abs(x1 - d.x) < hw && Math.abs(z1 - d.z) < hd) return d;
+      // Or passed straight through it along z between the two samples?
+      const zA = Math.min(z0, z1);
+      const zB = Math.max(z0, z1);
+      if (zA < d.z - hd && zB > d.z + hd) {
+        // x where the path crosses the door plane
+        const t = (d.z - z0) / (z1 - z0 || 1e-6);
+        const xAt = x0 + (x1 - x0) * t;
+        if (Math.abs(xAt - d.x) < hw) return d;
+      }
+    }
+    return undefined;
+  }
+
+  private doorMessage(door: WallBox["door"]): string {
+    switch (door) {
+      case "partition":
+        return `🧱 That brick archway is sealed! Walk through the open ${this.state.dungeonWing === 1 ? "West (Left)" : "East (Right)"} side or pull a Lever (E) to shift the wall.`;
+      case "bookcase":
+        return "📚 The Secret Brick Bookcase blocks the Grand Staircase to Floor 2! Open the real Grimoire Chest first (watch out for Mimics!).";
+      case "web1":
+      case "web2":
+      case "web3":
+        return "🕸️ A sticky Cinder-Spider Web blocks the centre lane. Hold your 🔥 Torch against it to burn it, or take the outer galleries.";
+      case "gateLeft":
+      case "gateRight":
+        return "⛓️🌑 The Shadow Portcullis Gate is locked! Press the Loose Brick Switch (E) on the wall to raise it.";
     }
   }
 
@@ -735,6 +779,9 @@ export class HubRoom extends Room<{ state: HubState }> {
       lastMoveAt: now,
       lastChatAt: 0,
       lastTrapHitAt: 0,
+      lastSafeX: player.x,
+      lastSafeZ: player.z,
+      lastDoorNoticeAt: 0,
       lastSnakeBiteAt: 0,
       mimicStruggles: 0,
       clientId,
@@ -1141,7 +1188,11 @@ export class HubRoom extends Room<{ state: HubState }> {
     if (act === "chest1" || act === "chest2" || act === "chest3") {
       const chestNum = act === "chest1" ? 1 : act === "chest2" ? 2 : 3;
       const realChest = (this.state.dungeonSeed % 3) + 1;
-      const chestXs: Record<number, number> = { 1: -5.2, 2: 0, 3: 5.2 };
+      const chestXs: Record<number, number> = {
+        1: BRICK_DUNGEON.centerX + BRICK_DUNGEON.chestXs[0],
+        2: BRICK_DUNGEON.centerX + BRICK_DUNGEON.chestXs[1],
+        3: BRICK_DUNGEON.centerX + BRICK_DUNGEON.chestXs[2],
+      };
 
       if (chestNum === realChest) {
         this.state.grimoireFound = 1;
@@ -1154,7 +1205,7 @@ export class HubRoom extends Room<{ state: HubState }> {
         player.mimicTrapped = chestNum;
         session.mimicStruggles = 0;
         player.x = chestXs[chestNum] ?? 0;
-        player.z = 201.5;
+        player.z = BRICK_DUNGEON.chestZ;
         player.rot = 0;
         player.energy = Math.max(15, player.energy - 15);
         this.broadcast(MSG.emote, { id: client.sessionId, anim: ANIM.mindblown, emoji: "🦷" } satisfies EmoteBroadcast);

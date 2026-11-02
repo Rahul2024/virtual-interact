@@ -3,6 +3,8 @@ import {
   ANIM,
   ARCADE_MSG,
   BRICK_DUNGEON,
+  chestAt,
+  dungeonClosedDoors,
   CINEMA_MSG,
   CINEMA_SEATS,
   FOOTBALL_MSG,
@@ -185,7 +187,9 @@ function triggerNearestBrickDungeonAction(s: Session, px: number, pz: number) {
       const action: DungeonActionType = px <= cx ? "lever1" : "lever2";
       s.room.send(FOREST_MSG.dungeonAction, { action });
     } else {
-      const action: DungeonActionType = px < cx - 2.2 ? "chest1" : px > cx + 2.2 ? "chest3" : "chest2";
+      const chest = chestAt(px, pz);
+      if (chest === 0) return; // not standing at a chest
+      const action: DungeonActionType = chest === 1 ? "chest1" : chest === 2 ? "chest2" : "chest3";
       s.room.send(FOREST_MSG.dungeonAction, { action });
     }
   } else if (floorNum === 2) {
@@ -759,6 +763,15 @@ function frame(now: number) {
         );
       }
       if (st) {
+        // Closed doors are solid on the client, so you stop at them instead of
+        // walking through and being teleported back by the server.
+        world.colliders.dynamic = dungeonClosedDoors({
+          dungeonWing: st.dungeonWing ?? 1,
+          grimoireFound: st.grimoireFound ?? 0,
+          websBurned: st.websBurned ?? 0,
+          gateLeftOpen: st.gateLeftOpen ?? 0,
+          gateRightOpen: st.gateRightOpen ?? 0,
+        });
         world.setDungeonState({
           dungeonWing: st.dungeonWing ?? 1,
           dungeonSeed: st.dungeonSeed ?? 0,

@@ -272,7 +272,139 @@ export const BRICK_DUNGEON = {
   bossHomeZ: 446,
   vaultChestZ: 470,
   escapeSlideZ: 476,
+
+  // ---- Hazard geometry. The ONLY place these numbers live: the server
+  // checks them, the client draws them and builds colliders from them. ----
+
+  // Floor 1
+  /** Cracked-slab rows; one slab per row is cracked (which one depends on dungeonSeed). */
+  slabRowZs: [126, 175, 181],
+  slabCenterX: 2.6,
+  slabHalfW: 2.1,
+  slabHalfD: 1.2,
+  /** Ceiling grates that douse torches; the drip is on one side per row. */
+  grateZs: [138, 152, 166],
+  grateDripX: 1.4,
+  grateDripHalfW: 1.3,
+  /** Canal: safe on the stepping stones (|x| ≤ stoneHalfW) or walkways (|x| ≥ walkwayMinX). */
+  canalStoneHalfW: 2.9,
+  canalWalkwayMinX: 10.8,
+  /** Arrow volley sweeps the central lane only. */
+  arrowHalfW: 3.8,
+  arrowHalfD: 1.1,
+  /** Shifting partition: one wing open at a time. Closed wing spans x ∈ [0.5, partitionOuterX]. */
+  partitionZ: 190.5,
+  partitionHalfD: 0.7,
+  partitionInnerX: 0.5,
+  partitionOuterX: 16.5,
+  /** Mimic alcove: chests 1..3 at these x, all at chestZ. */
+  chestXs: [-5.2, 0, 5.2],
+  chestZ: 201.5,
+  chestReach: 2.6,
+  /** Secret bookcase wall spans the full hallway width until the grimoire is found. */
+  secretWallHalfD: 0.6,
+
+  // Floor 2
+  /** Web curtains block the centre; the galleries at |x| ≥ webHalfW stay open. */
+  webHalfW: 8.5,
+  webHalfD: 0.35,
+  boulderRadius: 2.6,
+  boulderHitHalfW: 3.0,
+
+  // Floor 3
+  /** Chasm: safe on the bridge (|x| ≤ bridgeHalfW) or catwalks (|x| ≥ catwalkMinX). */
+  chasmBridgeHalfW: 3.2,
+  chasmCatwalkMinX: 11.0,
+  ironBarsStartZ: 372,
+  ironBarsEndZ: 392,
+  ironBarsHalfW: 0.4,
+  /** Each portcullis spans its half of the hallway, x ∈ [gateInnerX, halfW]. */
+  gateHalfD: 0.4,
+  gateInnerX: 0.6,
 } as const;
+
+/** The flags that decide which dungeon doors are currently solid. */
+export interface DungeonDoorState {
+  dungeonWing: number;
+  grimoireFound: number;
+  websBurned: number;
+  gateLeftOpen: number;
+  gateRightOpen: number;
+}
+
+/** Axis-aligned wall segment on the ground plane; the same shape the client's collider system uses. */
+export interface WallBox {
+  x: number;
+  z: number;
+  hw: number;
+  hd: number;
+  /** Which door this is, for messages. */
+  door: "partition" | "bookcase" | "web1" | "web2" | "web3" | "gateLeft" | "gateRight";
+}
+
+/**
+ * The doors that are closed right now, as solid boxes. The client turns these
+ * into colliders so you stop at a door instead of walking through and being
+ * teleported back; the server enforces the same boxes so nobody cheats.
+ */
+export function dungeonClosedDoors(state: DungeonDoorState): WallBox[] {
+  const D = BRICK_DUNGEON;
+  const cx = D.centerX;
+  const doors: WallBox[] = [];
+
+  // Floor 1 shifting partition: wing 1 = west open (east wall closed), wing 2 = east open.
+  const closedSide = state.dungeonWing === 1 ? 1 : -1;
+  const pHalf = (D.partitionOuterX - D.partitionInnerX) / 2;
+  doors.push({
+    x: cx + closedSide * (D.partitionInnerX + pHalf),
+    z: D.partitionZ,
+    hw: pHalf,
+    hd: D.partitionHalfD,
+    door: "partition",
+  });
+
+  // Floor 1 secret bookcase across the whole hallway until the grimoire is found.
+  if (state.grimoireFound === 0) {
+    doors.push({ x: cx, z: D.secretWallZ, hw: D.halfW, hd: D.secretWallHalfD, door: "bookcase" });
+  }
+
+  // Floor 2 web curtains in the centre lane.
+  const webZs = [D.web1Z, D.web2Z, D.web3Z] as const;
+  webZs.forEach((wz, i) => {
+    if ((state.websBurned & (1 << i)) === 0) {
+      doors.push({ x: cx, z: wz, hw: D.webHalfW, hd: D.webHalfD, door: `web${i + 1}` as WallBox["door"] });
+    }
+  });
+
+  // Floor 3 portcullis gates, one per side of the iron bars.
+  const gHalf = (D.halfW - D.gateInnerX) / 2;
+  if (state.gateLeftOpen === 0) {
+    doors.push({ x: cx - (D.gateInnerX + gHalf), z: D.gateZ, hw: gHalf, hd: D.gateHalfD, door: "gateLeft" });
+  }
+  if (state.gateRightOpen === 0) {
+    doors.push({ x: cx + (D.gateInnerX + gHalf), z: D.gateZ, hw: gHalf, hd: D.gateHalfD, door: "gateRight" });
+  }
+  return doors;
+}
+
+/**
+ * Which chest (1..3) is within reach of (x, z), or 0. Shared so the E key and
+ * the server agree on which chest you're standing at.
+ */
+export function chestAt(x: number, z: number): 0 | 1 | 2 | 3 {
+  const D = BRICK_DUNGEON;
+  if (Math.abs(z - D.chestZ) > 3.2) return 0;
+  let best: 0 | 1 | 2 | 3 = 0;
+  let bestD: number = D.chestReach;
+  D.chestXs.forEach((chX, i) => {
+    const d = Math.abs(x - (D.centerX + chX));
+    if (d < bestD) {
+      bestD = d;
+      best = (i + 1) as 1 | 2 | 3;
+    }
+  });
+  return best;
+}
 
 export function isInBrickDungeon(x: number, z: number): boolean {
   const maxW = z >= BRICK_DUNGEON.sanctumStartZ ? BRICK_DUNGEON.bossHalfW + 3 : BRICK_DUNGEON.halfW + 3;
