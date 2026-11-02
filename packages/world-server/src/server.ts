@@ -2,6 +2,8 @@ import { defineServer, defineRoom, createEndpoint, createRouter, matchMaker } fr
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { ROOMS } from "@vi/shared";
 import { HubRoom } from "./rooms/HubRoom.js";
+import { PokerRoom } from "./rooms/PokerRoom.js";
+import { POKER_ROOM } from "@vi/shared/poker";
 
 const startedAt = Date.now();
 
@@ -26,6 +28,7 @@ export function createWorldServer() {
     transport: new WebSocketTransport({ maxPayload: 64 * 1024 }),
     rooms: {
       [ROOMS.hub]: defineRoom(HubRoom),
+      [POKER_ROOM]: defineRoom(PokerRoom),
     },
     routes: createRouter({ health }),
   });
