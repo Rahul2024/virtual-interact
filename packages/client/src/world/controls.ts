@@ -20,6 +20,9 @@ export class Controls {
   blocked = false;
   /** True when the player is sitting in a Cinema Hall seat. */
   seatedInCinema = false;
+  /** True when seated at the poker table: camera stays behind your own seat. */
+  seatedAtPoker = false;
+  private pokerBaseYaw = 0;
 
   constructor(private readonly canvas: HTMLElement) {
     window.addEventListener("keydown", (e) => {
@@ -95,8 +98,47 @@ export class Controls {
     this.distance = 7;
   }
 
+  /**
+   * Sit at the poker table: the camera settles over your shoulder, looking down
+   * at your cards and across the felt. You can glance left and right at your
+   * neighbours but never swing around behind another player's cards.
+   */
+  enterPokerSeatView(seat: { x: number; z: number }, table: { x: number; z: number }) {
+    this.seatedAtPoker = true;
+    this.seatedInCinema = false;
+    // Camera sits on the far side of the seat from the table.
+    this.pokerBaseYaw = Math.atan2(seat.x - table.x, seat.z - table.z);
+    this.yaw = this.pokerBaseYaw;
+    this.pitch = 0.62;
+    this.distance = 1.7;
+  }
+
+  exitPokerSeatView() {
+    if (!this.seatedAtPoker) return;
+    this.seatedAtPoker = false;
+    this.pitch = 0.35;
+    this.distance = 7;
+  }
+
   /** Places the camera behind and above the target, or in auditorium view when seated. */
   updateCamera(camera: THREE.PerspectiveCamera, target: THREE.Vector3) {
+    if (this.seatedAtPoker) {
+      // Clamp the look-around so you can't peek over a neighbour's shoulder.
+      let d = this.yaw - this.pokerBaseYaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      d = THREE.MathUtils.clamp(d, -1.0, 1.0);
+      this.yaw = this.pokerBaseYaw + d;
+      this.pitch = THREE.MathUtils.clamp(this.pitch, 0.3, 1.05);
+      this.distance = THREE.MathUtils.clamp(this.distance, 1.2, 2.4);
+      const cp = Math.cos(this.pitch);
+      const x = target.x + Math.sin(this.yaw) * cp * this.distance;
+      const z = target.z + Math.cos(this.yaw) * cp * this.distance;
+      const y = target.y + 0.15 + Math.sin(this.pitch) * this.distance;
+      camera.position.set(x, y, z);
+      // Look a little past the player, at the felt in front of them.
+      camera.lookAt(target.x - Math.sin(this.yaw) * 0.9, target.y - 0.45, target.z - Math.cos(this.yaw) * 0.9);
+      return;
+    }
     if (this.seatedInCinema) {
       // Allow looking around at neighbors to your left/right while keeping the screen in view
       const cp = Math.cos(this.pitch);

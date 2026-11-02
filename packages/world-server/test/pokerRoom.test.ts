@@ -29,6 +29,7 @@ test("poker room: private hole cards, host start, a hand plays out, deck commitm
   const client = new Client(`ws://localhost:${PORT}`);
   const alice = await client.joinOrCreate<PokerTableState>(POKER_ROOM, { tableId: "test-table" });
   const bob = await client.joinById<PokerTableState>("test-table");
+  const phase = (): string => alice.state.phase;
   const events: PokerEventMessage[] = [];
   alice.onMessage(POKER_MSG.event, (e: PokerEventMessage) => events.push(e));
   bob.onMessage(POKER_MSG.event, () => {});
@@ -48,7 +49,7 @@ test("poker room: private hole cards, host start, a hand plays out, deck commitm
   // Only the host can start.
   bob.send(POKER_MSG.start);
   await sleep(100);
-  assert.equal(alice.state.phase, "lobby");
+  assert.equal(phase(), "lobby");
   alice.send(POKER_MSG.start);
   await waitFor(() => alice.state.phase === "acting", 8000);
 
@@ -78,12 +79,12 @@ test("poker room: private hole cards, host start, a hand plays out, deck commitm
 
   // Check it down: whoever is on the clock checks, until the dealer pays the pot.
   const deadline = Date.now() + 20000;
-  while (alice.state.phase !== "showdown") {
-    if (Date.now() > deadline) throw new Error(`stuck at ${alice.state.street}/${alice.state.phase}`);
-    if (alice.state.phase === "acting" && alice.state.toAct !== -1) {
+  while (phase() !== "showdown") {
+    if (Date.now() > deadline) throw new Error(`stuck at ${alice.state.street}/${phase()}`);
+    if (phase() === "acting" && alice.state.toAct !== -1) {
       const seat = alice.state.toAct;
       toRoom(seat).send(POKER_MSG.action, { action: { type: "check" } });
-      await waitFor(() => alice.state.toAct !== seat || alice.state.phase !== "acting", 3000);
+      await waitFor(() => alice.state.toAct !== seat || phase() !== "acting", 3000);
     } else {
       await sleep(50);
     }

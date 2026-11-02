@@ -276,6 +276,72 @@
       </div>
     </div>
 
+    <div id="poker" class="poker" hidden>
+      <div class="poker-card">
+        <header class="poker-head">
+          <div id="poker-title" class="poker-title">Royal Arcade · No-Limit Hold'em</div>
+          <div class="poker-head-btns">
+            <button id="poker-fair" type="button" class="poker-mini" title="Provably fair: verify the deal">fair deal</button>
+            <button id="poker-close" type="button" class="ideas-x" aria-label="Close">×</button>
+          </div>
+        </header>
+        <div id="poker-fair-box" class="poker-fair" hidden></div>
+        <div id="poker-dealer" class="poker-dealer">Welcome.</div>
+
+        <section id="poker-lobby" class="poker-lobby">
+          <div class="poker-row">
+            <label>Buy in <span class="muted">(<span id="poker-buyin-range">100–400</span>)</span></label>
+            <input id="poker-buyin" type="number" min="1" step="1" />
+            <button id="poker-sit" type="button">Take the seat</button>
+          </div>
+          <div id="poker-host" class="poker-host" hidden>
+            <div class="poker-host-title">Table settings (host)</div>
+            <div class="poker-grid">
+              <label>Small blind <input id="poker-cfg-sb" type="number" min="1" /></label>
+              <label>Big blind <input id="poker-cfg-bb" type="number" min="2" /></label>
+              <label>Min buy-in <input id="poker-cfg-min" type="number" min="1" /></label>
+              <label>Max buy-in <input id="poker-cfg-max" type="number" min="1" /></label>
+              <label>Seconds to act <input id="poker-cfg-timer" type="number" min="10" max="120" /></label>
+              <label class="check"><input id="poker-cfg-practice" type="checkbox" /> Practice aids (hand names, odds)</label>
+            </div>
+            <div class="poker-row">
+              <button id="poker-cfg-apply" type="button" class="secondary">Apply settings</button>
+              <button id="poker-start" type="button">Start the game</button>
+            </div>
+          </div>
+          <div id="poker-lobby-status" class="muted"></div>
+        </section>
+
+        <section id="poker-play" class="poker-play" hidden>
+          <div class="poker-me">
+            <div id="poker-my-cards" class="poker-my-cards"></div>
+            <div class="poker-me-text">
+              <div id="poker-hand-name" class="poker-hand-name"></div>
+              <div id="poker-pot" class="poker-pot"></div>
+            </div>
+            <button id="poker-peek" type="button" class="secondary" title="Hold to lift your cards (or hold Q)">Peek</button>
+          </div>
+          <div class="poker-timer-wrap" hidden><div id="poker-timer" class="poker-timer"></div></div>
+          <div id="poker-actions" class="poker-actions">
+            <button id="poker-fold" type="button" class="fold">Fold</button>
+            <button id="poker-check-call" type="button">Check / Call</button>
+            <button id="poker-raise" type="button" class="raise">Raise</button>
+          </div>
+          <div class="poker-raise-row">
+            <input id="poker-raise-slider" type="range" min="0" max="100" />
+            <input id="poker-raise-input" type="number" />
+          </div>
+          <div id="poker-presets" class="poker-presets"></div>
+          <div id="poker-history" class="poker-history"></div>
+          <div class="poker-row poker-foot">
+            <button id="poker-show" type="button" class="secondary" hidden>Show my cards</button>
+            <button id="poker-sit-out" type="button" class="secondary">Sit out next hand</button>
+            <button id="poker-leave" type="button" class="secondary">Leave table</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <div id="join" class="join">
       <form id="join-form" class="join-card" autocomplete="off">
         <h1>Virtual Interact</h1>

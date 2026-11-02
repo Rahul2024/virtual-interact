@@ -169,6 +169,92 @@ export function isInArcadeZone(x: number, z: number): boolean {
 }
 
 /**
+ * The Royal Arcade Hall: an enclosed, warm-lit room on the east side of the
+ * city. Walls, door and the poker table are placed from these numbers.
+ */
+export const ARCADE_HALL = {
+  minX: 64,
+  maxX: 102,
+  minZ: -15,
+  maxZ: 15,
+  wallHeight: 6.5,
+  /** Door in the west wall facing the plaza, |z| < doorHalfW. */
+  doorHalfW: 3.2,
+} as const;
+
+export function isInArcadeHall(x: number, z: number): boolean {
+  return x >= ARCADE_HALL.minX && x <= ARCADE_HALL.maxX && z >= ARCADE_HALL.minZ && z <= ARCADE_HALL.maxZ;
+}
+
+/**
+ * The poker table: an oval with 9 player seats around it and the NPC dealer
+ * on the flat south side. Seats are numbered clockwise from the dealer's left.
+ */
+export const POKER_TABLE = {
+  tableId: "royal-1",
+  centerX: 86,
+  centerZ: 0,
+  /** Felt half-length along x (plus rounded ends) and half-width along z. */
+  halfLength: 1.55,
+  halfWidth: 1.05,
+  /** Ellipse the seats sit on. */
+  seatRx: 2.55,
+  seatRz: 2.05,
+  /** Dealer position angle (radians, 0 = +x, counter-clockwise), seats fill the rest of the ring. */
+  dealerAngle: Math.PI / 2,
+  seatCount: 9,
+  /** Hub seat ids for the 9 poker seats start here (see CINEMA_SEATS). */
+  firstSeatId: 70,
+  /** Press E within this distance of a seat to sit. */
+  reach: 2.2,
+} as const;
+
+export interface PokerSeatSpot {
+  index: number;
+  x: number;
+  z: number;
+  /** Yaw the sitter faces (towards the table centre). */
+  rot: number;
+  /** Angle on the seat ellipse. */
+  angle: number;
+}
+
+/** Positions of the 9 player seats, clockwise from the dealer's left. */
+export const POKER_SEAT_SPOTS: readonly PokerSeatSpot[] = (() => {
+  const out: PokerSeatSpot[] = [];
+  const n = POKER_TABLE.seatCount;
+  for (let i = 0; i < n; i++) {
+    // Spread the seats over the ring, leaving the dealer's slot free.
+    const angle = POKER_TABLE.dealerAngle + ((i + 1) / (n + 1)) * Math.PI * 2;
+    const x = POKER_TABLE.centerX + Math.cos(angle) * POKER_TABLE.seatRx;
+    const z = POKER_TABLE.centerZ + Math.sin(angle) * POKER_TABLE.seatRz;
+    const rot = Math.atan2(POKER_TABLE.centerX - x, POKER_TABLE.centerZ - z);
+    out.push({ index: i, x, z, rot, angle });
+  }
+  return out;
+})();
+
+export const POKER_DEALER_SPOT = {
+  x: POKER_TABLE.centerX + Math.cos(POKER_TABLE.dealerAngle) * POKER_TABLE.seatRx,
+  z: POKER_TABLE.centerZ + Math.sin(POKER_TABLE.dealerAngle) * POKER_TABLE.seatRz,
+  rot: Math.atan2(-Math.cos(POKER_TABLE.dealerAngle), -Math.sin(POKER_TABLE.dealerAngle)),
+} as const;
+
+/** Nearest poker seat within reach of (x, z), or -1. */
+export function nearestPokerSeat(x: number, z: number): number {
+  let best = -1;
+  let bestD: number = POKER_TABLE.reach;
+  for (const s of POKER_SEAT_SPOTS) {
+    const d = Math.hypot(s.x - x, s.z - z);
+    if (d < bestD) {
+      bestD = d;
+      best = s.index;
+    }
+  }
+  return best;
+}
+
+/**
  * South District: Deep Forest Campfire Valley (`z = +68`, hidden behind the
  * Foothill Ridge at `z = +36..+56` so the city skyline is screened off).
  */
@@ -772,8 +858,21 @@ export const CINEMA_SEATS: readonly CinemaSeat[] = (() => {
       rot: rot,
     });
   }
+  // 9 Poker table seats in the Royal Arcade Hall (ids 70..78)
+  for (const spot of POKER_SEAT_SPOTS) {
+    list.push({ id: id++, row: 20, col: spot.index, x: spot.x, y: 0, z: spot.z, rot: spot.rot });
+  }
   return list;
 })();
+
+/** Hub seat id for a poker seat index, and back. */
+export function pokerSeatIdFor(index: number): number {
+  return POKER_TABLE.firstSeatId + index;
+}
+export function pokerSeatIndexOf(seatId: number): number {
+  const i = seatId - POKER_TABLE.firstSeatId;
+  return i >= 0 && i < POKER_TABLE.seatCount ? i : -1;
+}
 
 export const CINEMA_MSG = {
   setUrl: "cinema:set-url",

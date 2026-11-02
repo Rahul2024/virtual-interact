@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/server.ts",
-    "./state": "./src/rooms/HubState.ts"
+    "./state": "./src/rooms/HubState.ts",
+    "./poker-state": "./src/rooms/PokerState.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

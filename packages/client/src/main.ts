@@ -23,6 +23,11 @@ import {
   getDungeonFloorY,
   getWorldFloorY,
   isInArcadeZone,
+  POKER_SEAT_SPOTS,
+  POKER_TABLE,
+  nearestPokerSeat,
+  pokerSeatIdFor,
+  pokerSeatIndexOf,
   isInBrickDungeon,
   isInCampfireCircle,
   isInCinemaHall,
@@ -60,6 +65,10 @@ import { Hud, JoinScreen } from "./ui/hud";
 import { IdeasPanel } from "./ui/ideas";
 import { CinemaController, type CinemaFriendPeer } from "./ui/cinema";
 import { ActivitiesController } from "./ui/activities";
+import { PokerPanel } from "./ui/poker";
+import { joinPokerTable } from "./net/poker";
+import type { PokerSeatView, PokerTableSnapshot } from "./world/pokerTable";
+import type { ChipStack } from "@vi/shared/poker";
 
 const world = createWorld(document.getElementById("world")!, document.getElementById("labels")!);
 const controls = new Controls(world.renderer.domElement);
@@ -68,6 +77,93 @@ const hud = new Hud();
 const ideasPanel = new IdeasPanel();
 const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
+const pokerPanel = new PokerPanel();
+pokerPanel.onSeated = (index) => {
+  if (!session) return;
+  const spot = POKER_SEAT_SPOTS[index]!;
+  session.me.seatId = pokerSeatIdFor(index);
+  session.me.position.set(spot.x, 0, spot.z);
+  session.me.rot = spot.rot;
+  session.me.anim = ANIM.sit;
+  session.sentHistory.length = 0;
+  controls.exitCinemaSeatView();
+  controls.enterPokerSeatView(spot, { x: POKER_TABLE.centerX, z: POKER_TABLE.centerZ });
+  session.room.send(MSG.seat, { seatId: session.me.seatId } satisfies SeatMessage);
+};
+pokerPanel.onStood = () => {
+  controls.exitPokerSeatView();
+  if (!session) return;
+  if (pokerSeatIndexOf(session.me.seatId) >= 0) {
+    session.me.seatId = -1;
+    session.me.anim = ANIM.idle;
+    session.room.send(MSG.seat, { seatId: -1 } satisfies SeatMessage);
+  }
+};
+
+async function sitAtPokerTable(s: Session, seatIndex: number) {
+  try {
+    hud.addSystem("Taking a seat at the poker table…");
+    const room = await joinPokerTable(POKER_TABLE.tableId);
+    pokerPanel.attach(room, seatIndex);
+  } catch (err) {
+    console.error(err);
+    hud.addSystem("Could not reach the poker table. Try again in a moment.");
+  }
+  void s;
+}
+
+function pokerSnapshot(): PokerTableSnapshot | undefined {
+  const room = pokerPanel.currentRoom;
+  const st = room?.state;
+  if (!room || !st) return undefined;
+  const mySeat = pokerPanel.mySeat;
+  const parse = (j: string): ChipStack => {
+    try {
+      return JSON.parse(j) as ChipStack;
+    } catch {
+      return {};
+    }
+  };
+  const seats: PokerSeatView[] = st.seats.map((seat) => {
+    const mine = seat.index === mySeat;
+    const shown = seat.shownCards ? [...seat.shownCards] : [];
+    const hole = mine && seat.holeCards ? [...seat.holeCards] : [];
+    return {
+      index: seat.index,
+      occupied: !!seat.sessionId,
+      name: seat.name,
+      status: seat.status,
+      chips: parse(seat.chips),
+      frontChips: parse(seat.frontChips),
+      front: seat.front,
+      cards: shown.length ? shown : hole,
+      faceDown: shown.length === 0,
+      isButton: seat.isButton,
+      isTurn: seat.isTurn,
+      lastAction: seat.lastAction,
+    };
+  });
+  // Pot chips: the collected pot shown as clean stacks (per-street bets stay in front of players).
+  const pots = (() => {
+    try {
+      return JSON.parse(st.pots) as Array<{ amount: number }>;
+    } catch {
+      return [];
+    }
+  })();
+  const inFront = st.seats.reduce((n, seat) => n + seat.front, 0);
+  const collected = Math.max(0, pots.reduce((n, p) => n + p.amount, 0) - inFront);
+  const potChips: ChipStack = {};
+  let left = collected;
+  for (const v of [1000, 500, 100, 25, 5, 1]) {
+    const n = Math.floor(left / v);
+    if (n > 0) {
+      potChips[v] = n;
+      left -= n * v;
+    }
+  }
+  return { seats, board: [...st.board], potChips, potTotal: st.potTotal, dealerLine: st.dealerLine, mySeat, peeking: pokerPanel.peeking };
+}
 world.setScreenTexture(cinema.screenTexture);
 
 // Between the north and east paths, facing the fountain.
@@ -107,6 +203,17 @@ window.addEventListener("keydown", (e) => {
       activities.openMuralModal();
       return;
     }
+    if (pokerSeatIndexOf(session.me.seatId) >= 0) {
+      e.preventDefault();
+      pokerPanel.detach();
+      return;
+    }
+    const pokerSeat = nearestPokerSeat(px, pz);
+    if (pokerSeat >= 0) {
+      e.preventDefault();
+      void sitAtPokerTable(session, pokerSeat);
+      return;
+    }
     if (isInArcadeZone(px, pz)) {
       e.preventDefault();
       activities.openArcadeModal();
@@ -117,7 +224,7 @@ window.addEventListener("keydown", (e) => {
       triggerNearestBrickDungeonAction(session, px, pz);
       return;
     }
-    if (isInCampfireCircle(px, pz) || session.me.seatId >= 24) {
+    if (isInCampfireCircle(px, pz) || CINEMA_SEATS[session.me.seatId]?.row === 10) {
       e.preventDefault();
       toggleNearestSeat(session, true);
       return;
@@ -301,9 +408,8 @@ function toggleNearestSeat(s: Session, campfireMode: boolean) {
     return;
   }
   const occupied = getOccupiedSeats(s);
-  const pool = CINEMA_SEATS.filter((seat) =>
-    campfireMode ? seat.id >= CINEMA_HALL.seatCount && !occupied.has(seat.id) : seat.id < CINEMA_HALL.seatCount && !occupied.has(seat.id),
-  );
+  // Campfire logs are row 10; cinema rows are 0..5; poker seats (row 20) have their own flow.
+  const pool = CINEMA_SEATS.filter((seat) => (campfireMode ? seat.row === 10 : seat.row < 10) && !occupied.has(seat.id));
   if (pool.length === 0) {
     hud.addSystem("All seats here are currently taken!");
     return;
@@ -696,6 +802,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       .catch((err) => console.warn("could not load ideas", err));
 
     const end = (reason: string) => {
+      pokerPanel.detach();
       voice.dispose();
       hud.setMic("off");
       for (const r of remotes.values()) r.avatar.dispose();
@@ -752,6 +859,11 @@ function frame(now: number) {
       maybeSend(session, dt);
       ideaWall.setNear(ideaWall.isNear(session.me.position));
       session.voice.update(now);
+
+      pokerPanel.render();
+      const pokerSnap = pokerSnapshot();
+      if (pokerSnap) world.pokerTable.update(pokerSnap);
+      world.pokerTable.tick(dt, pokerPanel.peeking);
 
       // Which mimic chests (1..3) have someone in their jaws right now, as a bitmask.
       let chompingChests = 0;
@@ -905,6 +1017,11 @@ function stepLocal(s: Session, dt: number, now: number) {
   const moving = mv.lengthSq() > 0;
 
   if (s.me.seatId >= 0) {
+    if (moving && pokerSeatIndexOf(s.me.seatId) >= 0) {
+      // Standing up from the poker table leaves the game properly (folds if needed).
+      pokerPanel.detach();
+      return;
+    }
     if (moving) {
       s.me.seatId = -1;
       controls.exitCinemaSeatView();

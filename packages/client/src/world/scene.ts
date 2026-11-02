@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import {
-  ARCADE_ZONE,
+  ARCADE_HALL,
   BRICK_DUNGEON,
   CAMPFIRE_BASE,
   CINEMA_HALL,
@@ -17,6 +17,8 @@ import {
   getIndianHourFloat,
 } from "@vi/shared";
 import { Colliders } from "./collision";
+import { addArcadeHall } from "./arcadeHall";
+import type { PokerTableView } from "./pokerTable";
 
 export type TimeMode = "ist" | "day" | "sunset" | "night";
 
@@ -63,6 +65,7 @@ export interface World {
   muralTexture: THREE.CanvasTexture;
   timeMode: TimeMode;
   isNight: boolean;
+  pokerTable: PokerTableView;
   setScreenTexture(tex: THREE.Texture, accentColor?: string): void;
   setFootballState(ballX: number, ballZ: number, scoreRed: number, scoreBlue: number): void;
   setDungeonState(view: DungeonView): void;
@@ -353,8 +356,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   // West District: Team Football (Soccer) Stadium
   const { ballMesh, updateFootballBoard } = addFootballStadium(scene, colliders);
 
-  // East District: Multiplayer Neon Arcade Plaza
-  addArcadePlaza(scene, colliders);
+  // East District: the Royal Arcade Hall (poker table + classic cabinets)
+  const { pokerTable } = addArcadeHall(scene, colliders);
 
   // South District: Foothill Ridge, Deep Campfire Valley, Dunes, Insects & Frieren Square Stone-Brick Dungeon
   const { campfireLight, flameGroup, fireflies, dragonflies } = addCampfireAndForestWilderness(scene, colliders);
@@ -390,6 +393,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     muralTexture,
     timeMode: "ist",
     isNight: false,
+    pokerTable,
     setScreenTexture(tex: THREE.Texture, accentColor = "#5b8def") {
       const mat = screenMesh.material as THREE.MeshBasicMaterial;
       mat.map = tex;
@@ -963,51 +967,6 @@ function addFootballStadium(scene: THREE.Scene, colliders: Colliders) {
   };
 
   return { ballMesh, updateFootballBoard };
-}
-
-function addArcadePlaza(scene: THREE.Scene, colliders: Colliders) {
-  const cx = ARCADE_ZONE.centerX;
-  const cz = ARCADE_ZONE.centerZ;
-  const g = new THREE.Group();
-
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(14, 32),
-    standard("#1e1b2e", { emissive: "#3b1d5e", emissiveIntensity: 0.35 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(cx, 0.025, cz);
-  floor.receiveShadow = true;
-  g.add(floor);
-
-  const arcadeColors = ["#a66ce8", "#4fc3d9", "#f28ac9", "#6fcf7a"];
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    const ax = cx + Math.cos(a) * 6.5;
-    const az = cz + Math.sin(a) * 6.5;
-    const col = arcadeColors[i]!;
-    const cab = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 2.3, 1.2),
-      standard("#1a1d29", { emissive: col, emissiveIntensity: 0.45 }),
-    );
-    cab.position.set(ax, 1.15, az);
-    cab.castShadow = true;
-    g.add(cab);
-    colliders.circles.push({ x: ax, z: az, r: 1.0 });
-  }
-
-  scene.add(g);
-
-  createNoticeBoard(scene, colliders, {
-    x: cx - 12.5,
-    z: cz - 5.5,
-    yaw: -Math.PI / 2,
-    title: "ARCADE PLAZA",
-    lines: [
-      "Walk inside & press E to open Arcade Games",
-      "Play 2-Player Connect 4 & Tic-Tac-Toe",
-      "Compete on the live Speed Trivia board",
-    ],
-  });
 }
 
 /**
@@ -2524,7 +2483,7 @@ function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
     if (Math.abs(z) < 5 && Math.abs(x) < 70) continue;
     if (z < -30 && Math.abs(x) < 35) continue;
     if (Math.abs(x - FOOTBALL_STADIUM.centerX) < 26 && Math.abs(z) < 20) continue;
-    if (Math.hypot(x - ARCADE_ZONE.centerX, z - ARCADE_ZONE.centerZ) < 17) continue;
+    if (x > ARCADE_HALL.minX - 3 && x < ARCADE_HALL.maxX + 3 && z > ARCADE_HALL.minZ - 3 && z < ARCADE_HALL.maxZ + 3) continue;
     if (Math.hypot(x - CAMPFIRE_BASE.x, z - CAMPFIRE_BASE.z) < 14.5) continue;
     // Keep the trail from Campfire (z=68) across the Central Bridge (z=112) to the Brick Dungeon (z=120) clear
     if (Math.abs(x) < 5.8 && z >= 68 && z <= BRICK_DUNGEON.startZ + 2) continue;

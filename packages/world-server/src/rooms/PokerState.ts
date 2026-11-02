@@ -12,7 +12,7 @@ export const PokerSeat = schema(
     name: t.string().default(""),
     color: t.string().default("#5b8def"),
     /** "empty" | "sitting" (waiting for next hand) | "in" | "folded" | "allin" | "out" (sitting out) */
-    status: t.string().default("empty"),
+    status: t.string().default("empty" as string),
     /** Chips behind, total value. */
     stack: t.uint32().default(0),
     /** Chips behind, as JSON { "100": 2, "25": 4 }. */
@@ -42,7 +42,7 @@ export const PokerTableState = schema(
   {
     tableId: t.string().default(""),
     hostSessionId: t.string().default(""),
-    phase: t.string().default("lobby"),
+    phase: t.string().default("lobby" as string),
     // Config (host-set in the lobby)
     smallBlind: t.uint32().default(1),
     bigBlind: t.uint32().default(2),
@@ -53,7 +53,7 @@ export const PokerTableState = schema(
     // Live hand
     handNo: t.uint32().default(0),
     button: t.int8().default(-1),
-    street: t.string().default(""),
+    street: t.string().default("" as string),
     board: t.array("uint8"),
     potTotal: t.uint32().default(0),
     /** JSON [{ amount, eligible: [seat...] }] */
