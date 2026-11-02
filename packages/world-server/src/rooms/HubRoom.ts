@@ -8,6 +8,7 @@ import {
   dungeonClosedDoors,
   type WallBox,
   CAMPFIRE_BASE,
+  CINEMA_HALL,
   CINEMA_MSG,
   CINEMA_SEATS,
   FOOTBALL_MSG,
@@ -1311,7 +1312,7 @@ export class HubRoom extends Room<{ state: HubState }> {
     for (const [sid, p] of this.state.players.entries()) {
       const sess = this.sessions.get(sid);
       if (!sess) continue;
-      const inside = (p.seatId >= 0 && p.seatId < 24) || isInCinemaHall(p.x, p.z);
+      const inside = (p.seatId >= 0 && p.seatId < CINEMA_HALL.seatCount) || isInCinemaHall(p.x, p.z);
       if (inside) {
         if (sess.enteredCinemaAt === 0) sess.enteredCinemaAt = Date.now();
         inHall.push({ sid, name: p.name, enteredAt: sess.enteredCinemaAt });
@@ -1503,7 +1504,7 @@ export class HubRoom extends Room<{ state: HubState }> {
       z = player.z + dz * k;
     }
 
-    const wasInCinema = (player.seatId >= 0 && player.seatId < 24) || isInCinemaHall(player.x, player.z);
+    const wasInCinema = (player.seatId >= 0 && player.seatId < CINEMA_HALL.seatCount) || isInCinemaHall(player.x, player.z);
     if (player.seatId >= 0 && (payload.anim === ANIM.walk || payload.anim === ANIM.run)) {
       player.seatId = -1;
     }
@@ -1524,7 +1525,7 @@ export class HubRoom extends Room<{ state: HubState }> {
     ];
     player.anim = validAnims.includes(payload.anim) ? payload.anim : ANIM.idle;
 
-    const nowInCinema = (player.seatId >= 0 && player.seatId < 24) || isInCinemaHall(player.x, player.z);
+    const nowInCinema = (player.seatId >= 0 && player.seatId < CINEMA_HALL.seatCount) || isInCinemaHall(player.x, player.z);
     if (wasInCinema !== nowInCinema) {
       this.evaluateCinemaHost(true);
     }

@@ -11,7 +11,9 @@ import {
   OPEN_MIC_STAGE,
   SOCIAL_ZONE,
   WORLD,
+  getCinemaFloorY,
   getDungeonFloorY,
+  getWorldFloorY,
   getIndianHourFloat,
 } from "@vi/shared";
 import { Colliders } from "./collision";
@@ -1112,7 +1114,7 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
   colliders.circles.push({ x: cx, z: cz, r: 1.4 });
 
   const logMat = standard("#6e472b");
-  for (let i = 24; i < CINEMA_SEATS.length; i++) {
+  for (let i = CINEMA_HALL.seatCount; i < CINEMA_SEATS.length; i++) {
     const s = CINEMA_SEATS[i]!;
     const log = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 1.4, 8), logMat);
     log.rotation.z = Math.PI / 2;
@@ -2099,71 +2101,309 @@ function createAnimalMesh(species: string): AnimalMeshEntry {
 function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
   const group = new THREE.Group();
 
-  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(18, 21), standard("#3a1d28", { roughness: 0.95 }));
-  carpet.rotation.x = -Math.PI / 2;
-  carpet.position.set(0, 0.025, -44.5);
-  carpet.receiveShadow = true;
-  group.add(carpet);
+  const carpetAisleMat = standard("#38141e", { roughness: 0.95 });
+  const carpetRunnerMat = standard("#801428", { roughness: 0.88 });
+  const concreteRiserMat = standard("#1f1c26", { roughness: 0.85 });
+  const wallAcousticMat = standard("#14111c", { roughness: 0.95 });
+  const mahoganyTrimMat = standard("#4a2818", { roughness: 0.65 });
+  const brassGoldMat = standard("#c99a3e", { roughness: 0.35, metalness: 0.8 });
+  const neonGoldMat = standard("#fbbf24", { emissive: "#d97706", emissiveIntensity: 2.2 });
+  const neonBlueMat = standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.8 });
+  const ceilingAcousticMat = standard("#0d0b12", { roughness: 0.98 });
+  const curtainVelvetMat = standard("#6b0e24", { roughness: 0.82 });
+  const stepLightMat = standard("#fde047", { emissive: "#eab308", emissiveIntensity: 1.8 });
+  const cushionMat = standard("#a11d38", { roughness: 0.72 });
+  const armMat = standard("#1e2029", { roughness: 0.65, metalness: 0.2 });
 
-  for (const ax of [-0.65, 0.65]) {
-    const strip = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.12, 16),
-      standard("#ffcf70", { emissive: "#ffae33", emissiveIntensity: 0.8 }),
+  // 1. Exterior Grand Entrance Staircase & Facade (z = -20m to -26m)
+  const stairSteps = 10;
+  const stairW = 11.0;
+  const stairZStart = -20.0;
+  const stairZEnd = -26.0;
+  const stairH = 3.6;
+  for (let i = 0; i < stairSteps; i++) {
+    const stepZ = stairZStart + ((i + 0.5) / stairSteps) * (stairZEnd - stairZStart);
+    const stepY = ((i + 0.5) / stairSteps) * stairH;
+    const stepMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(stairW, 0.45, Math.abs(stairZEnd - stairZStart) / stairSteps + 0.1),
+      concreteRiserMat,
     );
-    strip.rotation.x = -Math.PI / 2;
-    strip.position.set(ax, 0.032, -43);
-    group.add(strip);
+    stepMesh.position.set(0, stepY - 0.2, stepZ);
+    stepMesh.receiveShadow = true;
+    group.add(stepMesh);
+
+    // Red carpet runner down the center of the exterior steps
+    const runner = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.6, Math.abs(stairZEnd - stairZStart) / stairSteps + 0.05),
+      carpetRunnerMat,
+    );
+    runner.rotation.x = -Math.PI / 2;
+    runner.position.set(0, stepY + 0.035, stepZ);
+    runner.receiveShadow = true;
+    group.add(runner);
   }
 
-  const stageDeck = new THREE.Mesh(new THREE.BoxGeometry(17, 0.7, 5.5), standard("#25212e"));
-  stageDeck.position.set(0, 0.35, -52.5);
-  stageDeck.castShadow = stageDeck.receiveShadow = true;
-  group.add(stageDeck);
-
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(16.6, 7.6, 0.6), standard("#191822"));
-  wall.position.set(0, 3.8, -54.9);
-  wall.castShadow = true;
-  group.add(wall);
-
-  const trim = new THREE.Mesh(
-    new THREE.BoxGeometry(CINEMA_HALL.screenWidth + 0.45, CINEMA_HALL.screenHeight + 0.45, 0.1),
-    standard("#5b8def", { emissive: "#5b8def", emissiveIntensity: 0.7 }),
-  );
-  trim.position.set(0, CINEMA_HALL.screenY, CINEMA_HALL.screenZ - 0.08);
-  group.add(trim);
-
+  // Brass railings along exterior entrance staircase
   for (const side of [-1, 1]) {
-    const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.6, 4.8, 19), standard("#262030"));
-    sideWall.position.set(side * 9.2, 2.4, -44.5);
-    sideWall.castShadow = sideWall.receiveShadow = true;
-    group.add(sideWall);
-
-    for (const sz of [-38, -43, -48]) {
-      const sconce = new THREE.Mesh(
-        new THREE.SphereGeometry(0.22, 8, 8),
-        standard("#ffe4a0", { emissive: "#ffae42", emissiveIntensity: 0.9 }),
-      );
-      sconce.position.set(side * 8.85, 3.1, sz);
-      group.add(sconce);
+    const railX = side * 5.6;
+    for (let rz = -20.5; rz >= -25.5; rz -= 1.6) {
+      const stepY = ((-20 - rz) / 6) * stairH;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 8), brassGoldMat);
+      post.position.set(railX, stepY + 0.55, rz);
+      group.add(post);
     }
-
-    colliders.boxes.push({ x: side * 9.2, z: -44.5, hw: 0.35, hd: 9.5 });
+    const handrail = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 7.2, 8), brassGoldMat);
+    handrail.rotation.x = -Math.atan2(stairH, 6.0);
+    handrail.position.set(railX, stairH / 2 + 0.95, -23.0);
+    group.add(handrail);
   }
 
+  // 2. Front Facade & Big Illuminated "CINEMA" Marquee Billboard at z = -26
+  // Left and Right front walls flanking the central entrance opening
   for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.1, 5.2, 1.1), standard("#2d2538"));
-    pillar.position.set(side * 4.2, 2.6, -34.5);
+    const facadeWall = new THREE.Mesh(new THREE.BoxGeometry(11.0, 12.2, 1.2), wallAcousticMat);
+    facadeWall.position.set(side * 11.0, 6.1, -26.0);
+    facadeWall.castShadow = facadeWall.receiveShadow = true;
+    group.add(facadeWall);
+    colliders.boxes.push({ x: side * 11.0, z: -26.0, hw: 5.5, hd: 0.6 });
+
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.2, 12.2, 1.6), mahoganyTrimMat);
+    pillar.position.set(side * 5.0, 6.1, -25.6);
     pillar.castShadow = true;
     group.add(pillar);
-    colliders.boxes.push({ x: side * 4.2, z: -34.5, hw: 0.55, hd: 0.55 });
   }
-  const archTop = new THREE.Mesh(
-    new THREE.BoxGeometry(9.6, 0.9, 1.2),
-    standard("#241d2f", { emissive: "#3b2d54", emissiveIntensity: 0.35 }),
-  );
-  archTop.position.set(0, 5.4, -34.5);
-  group.add(archTop);
 
+  // Grand Entrance Archway lintel over the doors
+  const archLintel = new THREE.Mesh(new THREE.BoxGeometry(11.2, 2.2, 1.6), mahoganyTrimMat);
+  archLintel.position.set(0, 8.8, -25.6);
+  archLintel.castShadow = true;
+  group.add(archLintel);
+
+  // Big Illuminated Retro Marquee Board: "CINEMA"
+  const marqueeCanvas = document.createElement("canvas");
+  marqueeCanvas.width = 1024;
+  marqueeCanvas.height = 256;
+  const mCtx = marqueeCanvas.getContext("2d")!;
+  mCtx.fillStyle = "#180910";
+  mCtx.fillRect(0, 0, 1024, 256);
+
+  // Decorative inner gold frame
+  mCtx.strokeStyle = "#eab308";
+  mCtx.lineWidth = 8;
+  mCtx.strokeRect(16, 16, 1024 - 32, 256 - 32);
+
+  // Retro incandescent chase bulb dots around the marquee border
+  for (let bx = 28; bx <= 1024 - 28; bx += 32) {
+    for (const by of [28, 256 - 28]) {
+      mCtx.beginPath();
+      mCtx.arc(bx, by, 7, 0, Math.PI * 2);
+      mCtx.fillStyle = "#fef08a";
+      mCtx.fill();
+    }
+  }
+  for (let by = 28; by <= 256 - 28; by += 28) {
+    for (const bx of [28, 1024 - 28]) {
+      mCtx.beginPath();
+      mCtx.arc(bx, by, 7, 0, Math.PI * 2);
+      mCtx.fillStyle = "#fef08a";
+      mCtx.fill();
+    }
+  }
+
+  // Glowing Neon "C I N E M A" text
+  mCtx.textAlign = "center";
+  mCtx.textBaseline = "middle";
+  mCtx.font = "900 115px system-ui, -apple-system, sans-serif";
+  mCtx.shadowColor = "#f59e0b";
+  mCtx.shadowBlur = 24;
+  mCtx.fillStyle = "#ffedd5";
+  mCtx.fillText("C  I  N  E  M  A", 512, 128);
+  mCtx.shadowBlur = 0;
+
+  const marqueeTexture = new THREE.CanvasTexture(marqueeCanvas);
+  marqueeTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const marqueeBox = new THREE.Mesh(new THREE.BoxGeometry(13.6, 3.4, 0.8), brassGoldMat);
+  marqueeBox.position.set(0, 9.8, -24.8);
+  marqueeBox.castShadow = true;
+  group.add(marqueeBox);
+
+  const marqueeFace = new THREE.Mesh(
+    new THREE.PlaneGeometry(13.2, 3.0),
+    new THREE.MeshBasicMaterial({ map: marqueeTexture }),
+  );
+  marqueeFace.position.set(0, 9.8, -24.38);
+  group.add(marqueeFace);
+
+  const marqueeLight = new THREE.PointLight("#f59e0b", 3.2, 24, 1.4);
+  marqueeLight.position.set(0, 9.8, -23.4);
+  group.add(marqueeLight);
+
+  // 3. Fully Enclosed Walls & Acoustic Ceiling Roof
+  const hallLen = Math.abs(CINEMA_HALL.minZ - CINEMA_HALL.maxZ); // 48.5m
+  const midZ = (CINEMA_HALL.minZ + CINEMA_HALL.maxZ) / 2; // -50.25m
+  const halfW = 16.5;
+
+  // Outer Side Walls (West & East)
+  for (const side of [-1, 1]) {
+    const sideWallX = side * halfW;
+    const outerSideWall = new THREE.Mesh(new THREE.BoxGeometry(1.2, 12.2, hallLen), wallAcousticMat);
+    outerSideWall.position.set(sideWallX, 6.1, midZ);
+    outerSideWall.castShadow = outerSideWall.receiveShadow = true;
+    group.add(outerSideWall);
+    colliders.boxes.push({ x: sideWallX, z: midZ, hw: 0.6, hd: hallLen / 2 });
+
+    // Decorative wall sconces & mahogany acoustic pilasters every 7m
+    for (let sz = -32; sz >= -68; sz -= 7) {
+      const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.35, 11.5, 0.95), mahoganyTrimMat);
+      pilaster.position.set(side * (halfW - 0.45), 5.8, sz);
+      group.add(pilaster);
+
+      const sconce = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), neonGoldMat);
+      sconce.position.set(side * (halfW - 0.75), 4.8, sz);
+      group.add(sconce);
+
+      if ((sz + 32) % 14 === 0) {
+        const sconceLight = new THREE.PointLight("#ffae42", 1.8, 18, 1.5);
+        sconceLight.position.set(side * (halfW - 1.2), 5.0, sz);
+        group.add(sconceLight);
+      }
+    }
+  }
+
+  // Front Screen Wall at z = -74.5
+  const frontWall = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 + 1.2, 12.2, 1.4), wallAcousticMat);
+  frontWall.position.set(0, 6.1, -74.5);
+  frontWall.castShadow = true;
+  group.add(frontWall);
+  colliders.boxes.push({ x: 0, z: -74.5, hw: halfW + 0.6, hd: 0.7 });
+
+  // Closed Acoustic Roof with Crossbeam Coffers
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 + 2.0, 0.9, hallLen + 1.5), ceilingAcousticMat);
+  ceiling.position.set(0, 12.2, midZ);
+  ceiling.castShadow = true;
+  group.add(ceiling);
+
+  for (let bz = -34; bz >= -68; bz -= 8) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 - 0.5, 0.65, 0.85), mahoganyTrimMat);
+    beam.position.set(0, 11.75, bz);
+    group.add(beam);
+  }
+
+  // 4. Stepped "Ladder" Stadium Seating Tiers (High at entrance -> Low at screen)
+  // Entrance Lobby & Top Walkway: y = 3.6m (z = -26 to -32)
+  const lobbyPromenade = new THREE.Mesh(new THREE.BoxGeometry(halfW * 2 - 2, 0.6, 6.0), concreteRiserMat);
+  lobbyPromenade.position.set(0, 3.3, -29.0);
+  lobbyPromenade.receiveShadow = true;
+  group.add(lobbyPromenade);
+
+  const lobbyCarpet = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2 - 2.5, 5.8), carpetAisleMat);
+  lobbyCarpet.rotation.x = -Math.PI / 2;
+  lobbyCarpet.position.set(0, 3.62, -29.0);
+  lobbyCarpet.receiveShadow = true;
+  group.add(lobbyCarpet);
+
+  // 6 Descending Stadium Tiers
+  const tierSpecs: Array<{ tierIdx: number; y: number; z0: number; z1: number; seatZ: number }> = [
+    { tierIdx: 5, y: 3.0, z0: -32.0, z1: -38.0, seatZ: -35.0 },
+    { tierIdx: 4, y: 2.4, z0: -38.0, z1: -44.0, seatZ: -41.0 },
+    { tierIdx: 3, y: 1.8, z0: -44.0, z1: -50.0, seatZ: -47.0 },
+    { tierIdx: 2, y: 1.2, z0: -50.0, z1: -56.0, seatZ: -53.0 },
+    { tierIdx: 1, y: 0.6, z0: -56.0, z1: -62.0, seatZ: -59.0 },
+    { tierIdx: 0, y: 0.0, z0: -62.0, z1: -67.0, seatZ: -65.0 },
+  ];
+
+  for (const tier of tierSpecs) {
+    const tierD = Math.abs(tier.z1 - tier.z0);
+    const tierMidZ = (tier.z0 + tier.z1) / 2;
+
+    if (tier.y > 0) {
+      const riserMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(halfW * 2 - 2.0, tier.y, tierD),
+        concreteRiserMat,
+      );
+      riserMesh.position.set(0, tier.y / 2, tierMidZ);
+      riserMesh.receiveShadow = true;
+      group.add(riserMesh);
+    }
+
+    const tierCarpet = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2 - 2.4, tierD - 0.1), carpetAisleMat);
+    tierCarpet.rotation.x = -Math.PI / 2;
+    tierCarpet.position.set(0, tier.y + 0.025, tierMidZ);
+    tierCarpet.receiveShadow = true;
+    group.add(tierCarpet);
+
+    // Illuminated step guide lights along aisle risers
+    for (const ax of [-1.4, 1.4, -10.5, 10.5]) {
+      const stepLight = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.12), stepLightMat);
+      stepLight.position.set(ax, tier.y + 0.15, tier.z0);
+      group.add(stepLight);
+    }
+  }
+
+  // Central Aisle Carpet Runner leading down the center
+  for (const tier of tierSpecs) {
+    const tierD = Math.abs(tier.z1 - tier.z0);
+    const tierMidZ = (tier.z0 + tier.z1) / 2;
+    const aisleRunner = new THREE.Mesh(new THREE.PlaneGeometry(2.4, tierD), carpetRunnerMat);
+    aisleRunner.rotation.x = -Math.PI / 2;
+    aisleRunner.position.set(0, tier.y + 0.035, tierMidZ);
+    aisleRunner.receiveShadow = true;
+    group.add(aisleRunner);
+  }
+
+  // 5. 60 Luxury Cinema Recliner Seats (10 per tier x 6 tiers)
+  const seatGeo = new THREE.BoxGeometry(0.9, 0.16, 0.78);
+  const backGeo = new THREE.BoxGeometry(0.9, 0.82, 0.16);
+  const armGeo = new THREE.BoxGeometry(0.12, 0.38, 0.75);
+  const cupGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.12, 8);
+  const pedestalGeo = new THREE.CylinderGeometry(0.16, 0.24, 0.38, 8);
+
+  for (let i = 0; i < CINEMA_HALL.seatCount; i++) {
+    const s = CINEMA_SEATS[i]!;
+    const chairY = s.y ?? 0;
+    const chair = new THREE.Group();
+    chair.position.set(s.x, chairY, s.z);
+
+    const ped = new THREE.Mesh(pedestalGeo, armMat);
+    ped.position.y = 0.19;
+    chair.add(ped);
+
+    const cushion = new THREE.Mesh(seatGeo, cushionMat);
+    cushion.position.y = 0.44;
+    cushion.castShadow = cushion.receiveShadow = true;
+    chair.add(cushion);
+
+    const back = new THREE.Mesh(backGeo, cushionMat);
+    back.position.set(0, 0.84, 0.32);
+    back.castShadow = back.receiveShadow = true;
+    chair.add(back);
+
+    for (const ax of [-0.46, 0.46]) {
+      const arm = new THREE.Mesh(armGeo, armMat);
+      arm.position.set(ax, 0.58, 0.04);
+      const cup = new THREE.Mesh(cupGeo, brassGoldMat);
+      cup.position.set(ax, 0.76, -0.25);
+      chair.add(arm, cup);
+    }
+
+    group.add(chair);
+  }
+
+  // 6. Colossal Screen, Elevated Stage & Velvet Curtains
+  const stageDeck = new THREE.Mesh(new THREE.BoxGeometry(26.0, 0.65, 5.5), concreteRiserMat);
+  stageDeck.position.set(0, 0.325, -70.5);
+  stageDeck.castShadow = stageDeck.receiveShadow = true;
+  group.add(stageDeck);
+  colliders.boxes.push({ x: 0, z: -70.5, hw: 13.0, hd: 2.75 });
+
+  const stageCarpet = new THREE.Mesh(new THREE.PlaneGeometry(25.5, 5.2), carpetRunnerMat);
+  stageCarpet.rotation.x = -Math.PI / 2;
+  stageCarpet.position.set(0, 0.66, -70.5);
+  stageCarpet.receiveShadow = true;
+  group.add(stageCarpet);
+
+  // Colossal Silver Screen (22m x 9.5m)
   const screenMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(CINEMA_HALL.screenWidth, CINEMA_HALL.screenHeight),
     new THREE.MeshBasicMaterial({ color: "#ffffff" }),
@@ -2171,57 +2411,42 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
   screenMesh.position.set(0, CINEMA_HALL.screenY, CINEMA_HALL.screenZ);
   group.add(screenMesh);
 
-  const screenLight = new THREE.PointLight("#5b8def", 3.5, 24, 1.5);
-  screenLight.position.set(0, 3.8, -50);
+  // Glowing Outer Neon Trim around Screen
+  const trim = new THREE.Mesh(
+    new THREE.BoxGeometry(CINEMA_HALL.screenWidth + 0.6, CINEMA_HALL.screenHeight + 0.6, 0.12),
+    neonBlueMat,
+  );
+  trim.position.set(0, CINEMA_HALL.screenY, CINEMA_HALL.screenZ - 0.08);
+  group.add(trim);
+
+  // Heavy Velvet Stage Drapes & Curtains flanking the screen
+  for (const side of [-1, 1]) {
+    const drape = new THREE.Mesh(new THREE.BoxGeometry(4.2, 10.5, 0.8), curtainVelvetMat);
+    drape.position.set(side * 13.2, 6.2, -71.8);
+    drape.castShadow = true;
+    group.add(drape);
+  }
+  const topValance = new THREE.Mesh(new THREE.BoxGeometry(28.0, 1.4, 0.8), curtainVelvetMat);
+  topValance.position.set(0, 11.4, -71.8);
+  group.add(topValance);
+
+  // Dynamic Ambient Screen Light
+  const screenLight = new THREE.PointLight("#5b8def", 4.5, 34, 1.45);
+  screenLight.position.set(0, CINEMA_HALL.screenY, -64.0);
   group.add(screenLight);
 
-  const cushionMat = standard("#b8324f", { roughness: 0.75 });
-  const armMat = standard("#252730", { roughness: 0.6 });
-  const seatGeo = new THREE.BoxGeometry(0.85, 0.14, 0.75);
-  const backGeo = new THREE.BoxGeometry(0.85, 0.72, 0.14);
-  const armGeo = new THREE.BoxGeometry(0.1, 0.35, 0.72);
-  const pedestalGeo = new THREE.CylinderGeometry(0.14, 0.22, 0.4, 8);
-
-  for (let i = 0; i < 24; i++) {
-    const s = CINEMA_SEATS[i]!;
-    const chair = new THREE.Group();
-    chair.position.set(s.x, 0, s.z);
-
-    const ped = new THREE.Mesh(pedestalGeo, armMat);
-    ped.position.y = 0.2;
-    chair.add(ped);
-
-    const cushion = new THREE.Mesh(seatGeo, cushionMat);
-    cushion.position.y = 0.42;
-    cushion.castShadow = cushion.receiveShadow = true;
-    chair.add(cushion);
-
-    const back = new THREE.Mesh(backGeo, cushionMat);
-    back.position.set(0, 0.78, 0.32);
-    back.castShadow = back.receiveShadow = true;
-    chair.add(back);
-
-    for (const ax of [-0.42, 0.42]) {
-      const arm = new THREE.Mesh(armGeo, armMat);
-      arm.position.set(ax, 0.56, 0.02);
-      chair.add(arm);
-    }
-
-    group.add(chair);
-  }
-
-  colliders.boxes.push({ x: 0, z: -52.8, hw: 8.5, hd: 2.6 });
   scene.add(group);
 
+  // Exterior Notice Board outside near the entrance stairs
   createNoticeBoard(scene, colliders, {
-    x: -6.8,
-    z: -33.2,
+    x: -8.8,
+    z: -19.5,
     yaw: 0,
-    title: "CINEMA HALL",
+    title: "GRAND CINEMA HALL",
     lines: [
-      "Walk inside & press E to sit in a seat",
-      "1st person inside is Host & pastes link to play",
-      "Press F to expand screen · Friend-only voice",
+      "Climb stairs & enter the Grand Cinema Hall",
+      "Seats step down high to low (ladder tiers) - Press E to sit",
+      "1st inside is Host & pastes video/YT link · Press F to expand",
     ],
   });
 

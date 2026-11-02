@@ -671,21 +671,23 @@ export interface CinemaSeat {
   row: number;
   col: number;
   x: number;
+  y?: number;
   z: number;
   rot: number;
 }
 
 export const CINEMA_HALL = {
   centerX: 0,
-  centerZ: -44,
-  screenZ: -54.5,
-  screenY: 3.9,
-  screenWidth: 13.5,
-  screenHeight: 5.6,
-  minX: -10.5,
-  maxX: 10.5,
-  minZ: -56,
-  maxZ: -33,
+  centerZ: -50,
+  screenZ: -72.0,
+  screenY: 6.2,
+  screenWidth: 22.0,
+  screenHeight: 9.5,
+  minX: -16.5,
+  maxX: 16.5,
+  minZ: -74.5,
+  maxZ: -26.0,
+  seatCount: 60,
 } as const;
 
 export function isInCinemaHall(x: number, z: number): boolean {
@@ -693,25 +695,67 @@ export function isInCinemaHall(x: number, z: number): boolean {
 }
 
 /**
- * 24 Cinema Hall seats (0..23) + 10 Campfire Log seats (24..33) at z = +68.
+ * Returns the floor elevation inside the Grand Tiered Stadium Cinema Hall
+ * (and its grand exterior entrance stairway) so players smoothly climb up
+ * the exterior marquee stairs to the entrance lobby (y = +3.6m), and then step
+ * down the tiered "ladder" seating aisles (y = 3.6m -> 3.0m -> 2.4m -> 1.8m -> 1.2m -> 0.6m -> 0.0m)
+ * towards the colossal screen!
+ */
+export function getCinemaFloorY(x: number, z: number): number {
+  if (Math.abs(x) > 16.5) return 0;
+  // Exterior grand entrance stairway climbing from the north avenue up to the doors
+  if (z >= -26 && z <= -20 && Math.abs(x) <= 5.5) {
+    return ((-20 - z) / 6) * 3.6;
+  }
+  if (!isInCinemaHall(x, z)) return 0;
+  // Inside Cinema Hall: ladder/stadium tiers descending from back entrance down to front screen
+  if (z >= -32) return 3.6; // Entrance lobby & top promenade
+  if (z >= -38) return 3.0; // Tier 6 (Row 5)
+  if (z >= -44) return 2.4; // Tier 5 (Row 4)
+  if (z >= -50) return 1.8; // Tier 4 (Row 3)
+  if (z >= -56) return 1.2; // Tier 3 (Row 2)
+  if (z >= -62) return 0.6; // Tier 2 (Row 1)
+  return 0.0;               // Tier 1 (Row 0) & front orchestra/stage
+}
+
+export function getWorldFloorY(x: number, z: number): number {
+  if (isInBrickDungeon(x, z)) return getDungeonFloorY(x, z);
+  const cinemaY = getCinemaFloorY(x, z);
+  if (cinemaY > 0) return cinemaY;
+  return 0;
+}
+
+/**
+ * 60 Cinema Hall stadium seats (0..59) across 6 descending tiers + 10 Campfire Log seats (60..69) at z = +68.
  */
 export const CINEMA_SEATS: readonly CinemaSeat[] = (() => {
   const list: CinemaSeat[] = [];
-  const rowZs = [-44.5, -41.2, -37.9];
-  const colXs = [-6.2, -4.6, -3.0, -1.4, 1.4, 3.0, 4.6, 6.2];
+  // 6 descending stadium tiers: Row 5 (highest, near entrance) down to Row 0 (lowest, near screen)
+  const tiers: Array<{ row: number; z: number; y: number }> = [
+    { row: 5, z: -35.0, y: 3.0 },
+    { row: 4, z: -41.0, y: 2.4 },
+    { row: 3, z: -47.0, y: 1.8 },
+    { row: 2, z: -53.0, y: 1.2 },
+    { row: 1, z: -59.0, y: 0.6 },
+    { row: 0, z: -65.0, y: 0.0 },
+  ];
+  // 10 seats per row: 5 left of center aisle, 5 right of center aisle
+  const colXs = [-9.4, -7.6, -5.8, -4.0, -2.2, 2.2, 4.0, 5.8, 7.6, 9.4];
   let id = 0;
-  for (let r = 0; r < rowZs.length; r++) {
+  for (const tier of tiers) {
     for (let c = 0; c < colXs.length; c++) {
       list.push({
         id: id++,
-        row: r,
+        row: tier.row,
         col: c,
         x: colXs[c]!,
-        z: rowZs[r]!,
-        rot: Math.PI,
+        y: tier.y,
+        z: tier.z,
+        rot: Math.PI, // Facing screen at -z
       });
     }
   }
+  // 10 Campfire Log seats at z = +68 (ids 60..69)
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
     const r = 4.2;
@@ -723,6 +767,7 @@ export const CINEMA_SEATS: readonly CinemaSeat[] = (() => {
       row: 10,
       col: i,
       x: x,
+      y: 0,
       z: z,
       rot: rot,
     });

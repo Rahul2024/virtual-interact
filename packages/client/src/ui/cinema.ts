@@ -71,12 +71,14 @@ export interface CinemaFriendPeer {
  */
 export class CinemaController {
   readonly screenCanvas: HTMLCanvasElement;
-  readonly screenTexture: THREE.CanvasTexture;
+  readonly standbyTexture: THREE.CanvasTexture;
+  readonly videoTexture: THREE.VideoTexture;
 
   private ctx: CanvasRenderingContext2D;
   private video: HTMLVideoElement;
   private posterImg: HTMLImageElement;
   private posterReady = false;
+  private standbyDirty = true;
 
   // Synced state from HubState
   private movieUrl = "";
@@ -177,6 +179,15 @@ export class CinemaController {
   onFriendAccept: (fromClientId: string) => void = () => {};
   onFriendRemove: (friendClientId: string) => void = () => {};
   onModalOpenChange: (open: boolean) => void = () => {};
+  onScreenTextureChange?: (tex: THREE.Texture, accentColor?: string) => void;
+
+  get screenTexture(): THREE.Texture {
+    return !this.usingEmbed && this.videoReady && this.movieUrl ? this.videoTexture : this.standbyTexture;
+  }
+
+  updateActiveScreenTexture() {
+    this.onScreenTextureChange?.(this.screenTexture, this.movieUrl ? "#38bdf8" : "#5b8def");
+  }
 
   constructor() {
     this.screenCanvas = document.createElement("canvas");
@@ -188,18 +199,21 @@ export class CinemaController {
     this.overlayCanvas.height = 720;
     this.overlayCtx = this.overlayCanvas.getContext("2d")!;
 
-    this.screenTexture = new THREE.CanvasTexture(this.screenCanvas);
-    this.screenTexture.colorSpace = THREE.SRGBColorSpace;
-    this.screenTexture.minFilter = THREE.LinearFilter;
-    this.screenTexture.magFilter = THREE.LinearFilter;
+    this.standbyTexture = new THREE.CanvasTexture(this.screenCanvas);
+    this.standbyTexture.colorSpace = THREE.SRGBColorSpace;
+    this.standbyTexture.minFilter = THREE.LinearFilter;
+    this.standbyTexture.magFilter = THREE.LinearFilter;
+    this.standbyTexture.generateMipmaps = false;
 
     this.posterImg = new Image();
     this.posterImg.crossOrigin = "anonymous";
     this.posterImg.addEventListener("load", () => {
       this.posterReady = true;
+      this.standbyDirty = true;
     });
     this.posterImg.addEventListener("error", () => {
       this.posterReady = false;
+      this.standbyDirty = true;
     });
 
     this.video = document.createElement("video");
@@ -209,6 +223,12 @@ export class CinemaController {
     this.video.preload = "auto";
     this.video.volume = 0;
     this.video.muted = true;
+
+    this.videoTexture = new THREE.VideoTexture(this.video);
+    this.videoTexture.colorSpace = THREE.SRGBColorSpace;
+    this.videoTexture.minFilter = THREE.LinearFilter;
+    this.videoTexture.magFilter = THREE.LinearFilter;
+    this.videoTexture.generateMipmaps = false;
 
     const handleVideoDuration = () => {
       if (isFinite(this.video.duration) && this.video.duration > 1) {
@@ -225,6 +245,7 @@ export class CinemaController {
     this.video.addEventListener("canplay", () => {
       this.videoReady = true;
       handleVideoDuration();
+      this.updateActiveScreenTexture();
       if (!this.paused && !this.usingEmbed && this.inCinemaEarshot) {
         void this.video.play().catch(() => {});
       }
@@ -505,6 +526,7 @@ export class CinemaController {
     this.isHost = opts.isHost;
     this.hostName = opts.hostName || "Host";
 
+    this.standbyDirty = true;
     if (changedUrl) {
       this.localDurationSec = 0;
       this.loadMovieUrl(opts.movieUrl);
@@ -512,6 +534,7 @@ export class CinemaController {
     if (changedHost) {
       this.updateHostPermissionsUI();
     }
+    this.updateActiveScreenTexture();
 
     this.applyImmediateSyncSeek(this.getCurrentElapsedSec(), this.paused);
   }
@@ -584,6 +607,7 @@ export class CinemaController {
 
   private loadMovieUrl(url: string) {
     this.posterReady = false;
+    this.standbyDirty = true;
     if (!url) {
       this.usingEmbed = false;
       this.isYouTubeEmbed = false;
@@ -593,6 +617,7 @@ export class CinemaController {
       this.video.removeAttribute("src");
       this.videoReady = false;
       this.embedHost.hidden = true;
+      this.updateActiveScreenTexture();
       return;
     }
 
@@ -617,6 +642,7 @@ export class CinemaController {
         this.ytIframe.src = "";
       }
       this.syncStageVisibility();
+      this.updateActiveScreenTexture();
       return;
     }
 
@@ -636,12 +662,14 @@ export class CinemaController {
         this.ytIframe.src = url;
       }
       this.syncStageVisibility();
+      this.updateActiveScreenTexture();
     };
     this.video.src = url;
     this.video.load();
     if (!this.paused && this.inCinemaEarshot) {
       void this.video.play().catch(() => {});
     }
+    this.updateActiveScreenTexture();
   }
 
   private syncStageVisibility() {
@@ -853,38 +881,49 @@ export class CinemaController {
       this.overlayTime.textContent = timeDisplay;
     }
 
-    if (
-      this.inCinemaEarshot &&
-      this.videoReady &&
-      !this.usingEmbed &&
-      !this.paused &&
-      isFinite(this.video.duration) &&
-      this.video.duration > 0
-    ) {
-      const targetTime = elapsedSec % this.video.duration;
-      if (Math.abs(this.video.currentTime - targetTime) > 2.0) {
-        try {
-          this.video.currentTime = targetTime;
-        } catch {
-          /* ignore */
+    const hasDirectVideo = Boolean(this.movieUrl && this.videoReady && !this.usingEmbed);
+
+    if (hasDirectVideo) {
+      if (
+        this.inCinemaEarshot &&
+        !this.paused &&
+        isFinite(this.video.duration) &&
+        this.video.duration > 0
+      ) {
+        const targetTime = elapsedSec % this.video.duration;
+        const drift = this.video.currentTime - targetTime;
+        if (Math.abs(drift) > 4.5) {
+          try {
+            this.video.currentTime = targetTime;
+          } catch {
+            /* ignore */
+          }
+          this.video.playbackRate = 1.0;
+        } else if (drift < -0.35) {
+          this.video.playbackRate = 1.05; // gently catch up without dumping buffers
+        } else if (drift > 0.35) {
+          this.video.playbackRate = 0.95; // gently slow down
+        } else {
+          this.video.playbackRate = 1.0;
         }
       }
-    }
 
-    const w = this.screenCanvas.width;
-    const h = this.screenCanvas.height;
-    const ctx = this.ctx;
-
-    if (this.movieUrl && this.videoReady && !this.usingEmbed && this.video.readyState >= 2) {
-      ctx.drawImage(this.video, 0, 0, w, h);
+      // If expanded overlay is open, render video frame directly onto overlay canvas
+      if (this.expanded && this.video.readyState >= 2) {
+        this.overlayCtx.drawImage(this.video, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+      }
     } else {
-      this.drawStandbyScreen(ctx, w, h);
-    }
-
-    this.screenTexture.needsUpdate = true;
-
-    if (this.expanded && !this.usingEmbed) {
-      this.overlayCtx.drawImage(this.screenCanvas, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+      // Standby or Embed mode: only render when dirty to save CPU & GPU bus bandwidth!
+      if (this.standbyDirty) {
+        const w = this.screenCanvas.width;
+        const h = this.screenCanvas.height;
+        this.drawStandbyScreen(this.ctx, w, h);
+        this.standbyTexture.needsUpdate = true;
+        this.standbyDirty = false;
+      }
+      if (this.expanded && !this.usingEmbed) {
+        this.overlayCtx.drawImage(this.screenCanvas, 0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+      }
     }
   }
 

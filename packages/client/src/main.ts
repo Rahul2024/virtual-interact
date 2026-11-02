@@ -5,6 +5,7 @@ import {
   BRICK_DUNGEON,
   chestAt,
   dungeonClosedDoors,
+  CINEMA_HALL,
   CINEMA_MSG,
   CINEMA_SEATS,
   FOOTBALL_MSG,
@@ -17,8 +18,10 @@ import {
   PLAYER,
   REPO_URL,
   TEAM,
+  getCinemaFloorY,
   getDungeonFloorNumber,
   getDungeonFloorY,
+  getWorldFloorY,
   isInArcadeZone,
   isInBrickDungeon,
   isInCampfireCircle,
@@ -66,6 +69,9 @@ const ideasPanel = new IdeasPanel();
 const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
 world.setScreenTexture(cinema.screenTexture);
+cinema.onScreenTextureChange = (tex, accent) => {
+  world.setScreenTexture(tex, accent);
+};
 
 // Between the north and east paths, facing the fountain.
 const ideaWall = new IdeaWall(world.scene, world.colliders, 12.5, -12.5);
@@ -151,7 +157,11 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.code === "KeyF") {
-    if (isInCinemaHall(session.me.position.x, session.me.position.z) || (session.me.seatId >= 0 && session.me.seatId < 24) || cinema.expanded) {
+    if (
+      isInCinemaHall(session.me.position.x, session.me.position.z) ||
+      (session.me.seatId >= 0 && session.me.seatId < CINEMA_HALL.seatCount) ||
+      cinema.expanded
+    ) {
       e.preventDefault();
       cinema.setExpanded(!cinema.expanded);
       return;
@@ -295,7 +305,7 @@ function toggleNearestSeat(s: Session, campfireMode: boolean) {
   }
   const occupied = getOccupiedSeats(s);
   const pool = CINEMA_SEATS.filter((seat) =>
-    campfireMode ? seat.id >= 24 && !occupied.has(seat.id) : seat.id < 24 && !occupied.has(seat.id),
+    campfireMode ? seat.id >= CINEMA_HALL.seatCount && !occupied.has(seat.id) : seat.id < CINEMA_HALL.seatCount && !occupied.has(seat.id),
   );
   if (pool.length === 0) {
     hud.addSystem("All seats here are currently taken!");
@@ -312,7 +322,7 @@ function toggleNearestSeat(s: Session, campfireMode: boolean) {
 
 function sitBesideFriends(s: Session) {
   const occupied = getOccupiedSeats(s);
-  const available = CINEMA_SEATS.filter((seat) => seat.id < 24 && !occupied.has(seat.id));
+  const available = CINEMA_SEATS.filter((seat) => seat.id < CINEMA_HALL.seatCount && !occupied.has(seat.id));
   if (available.length === 0) {
     hud.addSystem("No empty seats available in the Cinema Hall.");
     return;
@@ -333,7 +343,8 @@ function sitBesideFriends(s: Session) {
     sitInSeat(s, best.id);
     hud.addSystem(`Seated in Seat #${best.id + 1} right beside your friend!`);
   } else {
-    const centerSeat = available.find((seat) => seat.row === 1 && (seat.col === 3 || seat.col === 4)) ?? available[0]!;
+    // Pick center seat in middle tier (e.g. tier 3 / row 2)
+    const centerSeat = available.find((seat) => seat.row === 3 && (seat.col === 4 || seat.col === 5)) ?? available[0]!;
     sitInSeat(s, centerSeat.id);
     hud.addSystem(`Seated in Cinema Seat #${centerSeat.id + 1}.`);
   }
@@ -343,11 +354,11 @@ function sitInSeat(s: Session, seatId: number) {
   const seat = CINEMA_SEATS[seatId];
   if (!seat) return;
   s.me.seatId = seat.id;
-  s.me.position.set(seat.x, 0, seat.z);
+  s.me.position.set(seat.x, seat.y ?? 0, seat.z);
   s.me.rot = seat.rot;
   s.me.anim = ANIM.sit;
   s.sentHistory.length = 0;
-  if (seat.id < 24) {
+  if (seat.id < CINEMA_HALL.seatCount) {
     controls.enterCinemaSeatView();
   }
   s.room.send(MSG.seat, { seatId: seat.id } satisfies SeatMessage);
@@ -538,8 +549,10 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     const updateCount = () => hud.setCount(room.state?.players?.size ?? 1);
 
     callbacks.onAdd("players", (player, id) => {
+      const initSeat = player.seatId >= 0 ? CINEMA_SEATS[player.seatId] : undefined;
+      const initY = initSeat ? (initSeat.y ?? 0) : getWorldFloorY(player.x, player.z);
       if (id === room.sessionId) {
-        me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
+        me.position.set(player.x, initY, player.z);
         me.rot = player.rot;
         me.seatId = player.seatId;
         me.mimicTrapped = player.mimicTrapped ?? 0;
@@ -559,20 +572,21 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
           s.cookedMeat = player.cookedMeat;
           s.energy = player.energy;
           if (player.mimicTrapped > 0) {
-            me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
+            me.position.set(player.x, getWorldFloorY(player.x, player.z), player.z);
             me.rot = player.rot;
             s.sentHistory.length = 0;
             return;
           }
           if (player.seatId >= 0) {
-            me.position.set(player.x, 0, player.z);
+            const curSeat = CINEMA_SEATS[player.seatId];
+            me.position.set(player.x, curSeat ? (curSeat.y ?? 0) : 0, player.z);
             me.rot = player.rot;
             me.anim = ANIM.sit;
             return;
           }
           const echoed = s.sentHistory.some((p) => Math.abs(p.x - player.x) < 0.05 && Math.abs(p.z - player.z) < 0.05);
           if (!echoed) {
-            me.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
+            me.position.set(player.x, getWorldFloorY(player.x, player.z), player.z);
             s.sentHistory.length = 0;
           }
         });
@@ -582,7 +596,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       }
 
       const avatar = new Avatar(player.name, player.color);
-      avatar.position.set(player.x, getDungeonFloorY(player.x, player.z), player.z);
+      avatar.position.set(player.x, initY, player.z);
       avatar.rot = player.rot;
       avatar.anim = player.anim as Anim;
       avatar.seatId = player.seatId;
@@ -731,7 +745,7 @@ function frame(now: number) {
       stepLocal(session, dt, now);
       stepRemotes(session, dt);
       const isSeated = session.me.seatId >= 0;
-      const isCinemaSeated = session.me.seatId >= 0 && session.me.seatId < 24;
+      const isCinemaSeated = session.me.seatId >= 0 && session.me.seatId < CINEMA_HALL.seatCount;
       camTarget.set(
         session.me.position.x,
         session.me.position.y + (isSeated ? 1.25 : 1.5),
@@ -817,7 +831,7 @@ function frame(now: number) {
           name: roomPlayerName(session, sid),
           color: r.color,
           isFriend: session.friends.has(r.clientId),
-          inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < 24),
+          inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < CINEMA_HALL.seatCount),
           seatId: r.avatar.seatId,
           speaking: r.speaking,
           distance: Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz),
@@ -885,7 +899,7 @@ function roomPlayerName(s: Session, sid: string): string {
 
 function stepLocal(s: Session, dt: number, now: number) {
   if (s.me.mimicTrapped > 0) {
-    s.me.position.y = getDungeonFloorY(s.me.position.x, s.me.position.z);
+    s.me.position.y = getWorldFloorY(s.me.position.x, s.me.position.z);
     s.me.update(dt);
     return;
   }
@@ -901,7 +915,7 @@ function stepLocal(s: Session, dt: number, now: number) {
     } else {
       const seat = CINEMA_SEATS[s.me.seatId];
       if (seat) {
-        s.me.position.set(seat.x, 0, seat.z);
+        s.me.position.set(seat.x, seat.y ?? 0, seat.z);
         s.me.rot = seat.rot;
       }
       s.me.anim = ANIM.sit;
@@ -923,7 +937,7 @@ function stepLocal(s: Session, dt: number, now: number) {
     s.me.anim = ANIM.idle;
   }
   world.colliders.resolve(s.me.position, PLAYER.radius);
-  s.me.position.y = getDungeonFloorY(s.me.position.x, s.me.position.z);
+  s.me.position.y = getWorldFloorY(s.me.position.x, s.me.position.z);
   s.me.update(dt);
 }
 
@@ -933,7 +947,8 @@ function stepRemotes(s: Session, dt: number) {
     const p = r.avatar.position;
     p.x += (r.target.x - p.x) * k;
     p.z += (r.target.z - p.z) * k;
-    p.y = getDungeonFloorY(p.x, p.z);
+    const remoteSeat = r.avatar.seatId >= 0 ? CINEMA_SEATS[r.avatar.seatId] : undefined;
+    p.y = remoteSeat ? (remoteSeat.y ?? 0) : getWorldFloorY(p.x, p.z);
     r.avatar.rot = lerpAngle(r.avatar.rot, r.target.rot, k);
     r.avatar.update(dt);
   }
