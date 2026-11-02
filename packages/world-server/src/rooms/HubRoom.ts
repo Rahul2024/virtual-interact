@@ -396,6 +396,16 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   private tickAnimals(dt: number) {
+    if (this.state.players.size > 0) {
+      let anyInSouth = false;
+      for (const p of this.state.players.values()) {
+        if (p.z > 45) {
+          anyInSouth = true;
+          break;
+        }
+      }
+      if (!anyInSouth) return;
+    }
     const now = Date.now();
     for (const [id, brain] of this.animalBrains.entries()) {
       const animal = this.state.animals.get(id);
@@ -523,6 +533,15 @@ export class HubRoom extends Room<{ state: HubState }> {
    * - FLOOR 4 (`z = 420..480`, `y = +18m` — 👑 SANCTUM OF THE 3-FACED DIRE WOLF)
    */
   private tickBrickDungeon(dt: number) {
+    let anyNearDungeon = this.state.players.size === 0;
+    for (const p of this.state.players.values()) {
+      if (p.z > 90 || p.mimicTrapped !== 0) {
+        anyNearDungeon = true;
+        break;
+      }
+    }
+    if (!anyNearDungeon) return;
+
     // 1. Floor 1 Sweeping Frost-Arrow Volley
     let az = this.state.arrowVolleyZ - 12.5 * dt;
     if (az < BRICK_DUNGEON.startZ + 4) {

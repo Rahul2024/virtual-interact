@@ -507,25 +507,32 @@ export class CinemaController {
   }) {
     const changedUrl = opts.movieUrl !== this.movieUrl;
     const changedHost = opts.isHost !== this.isHost || opts.hostName !== this.hostName;
+    const changedPlayback =
+      changedUrl ||
+      opts.paused !== this.paused ||
+      Math.abs(opts.startedAt - this.startedAt) > 250 ||
+      (opts.paused && Math.abs(opts.pausedAtSec - this.pausedAtSec) > 0.25);
 
     this.movieUrl = opts.movieUrl;
     this.syncedDurationSec = opts.movieDurationSec || 0;
-    this.startedAt = opts.startedAt;
-    this.paused = opts.paused;
-    this.pausedAtSec = opts.pausedAtSec;
     this.isHost = opts.isHost;
     this.hostName = opts.hostName || "Host";
 
-    this.standbyDirty = true;
     if (changedUrl) {
       this.localDurationSec = 0;
+      this.standbyDirty = true;
       this.loadMovieUrl(opts.movieUrl);
     }
     if (changedHost) {
+      this.standbyDirty = true;
       this.updateHostPermissionsUI();
     }
-
-    this.applyImmediateSyncSeek(this.getCurrentElapsedSec(), this.paused);
+    if (changedPlayback) {
+      this.startedAt = opts.startedAt;
+      this.paused = opts.paused;
+      this.pausedAtSec = opts.pausedAtSec;
+      this.applyImmediateSyncSeek(this.getCurrentElapsedSec(), this.paused);
+    }
   }
 
   applyImmediateSyncSeek(seekSec: number, paused: boolean) {
