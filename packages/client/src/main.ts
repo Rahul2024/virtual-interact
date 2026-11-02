@@ -738,11 +738,14 @@ function frame(now: number) {
       ideaWall.setNear(ideaWall.isNear(session.me.position));
       session.voice.update(now);
 
+      // Which mimic chests (1..3) have someone in their jaws right now, as a bitmask.
+      let chompingChests = 0;
       let anyPeerMimicTrapped = false;
+      if (session.me.mimicTrapped > 0) chompingChests |= 1 << (session.me.mimicTrapped - 1);
       for (const r of session.remotes.values()) {
         if (r.avatar.mimicTrapped > 0) {
           anyPeerMimicTrapped = true;
-          break;
+          chompingChests |= 1 << (r.avatar.mimicTrapped - 1);
         }
       }
 
@@ -756,19 +759,19 @@ function frame(now: number) {
         );
       }
       if (st) {
-        world.setDungeonState(
-          st.dungeonWing ?? 1,
-          st.dungeonSeed ?? 0,
-          st.grimoireFound ?? 0,
-          st.websBurned ?? 0,
-          st.gateLeftOpen ?? 0,
-          st.gateRightOpen ?? 0,
-          st.vaultUnlocked ?? 0,
-          st.arrowVolleyZ ?? BRICK_DUNGEON.hall1EndZ,
-          st.fireBoulderZ ?? BRICK_DUNGEON.boulderEndZ,
-          session.me.mimicTrapped || (anyPeerMimicTrapped ? 1 : 0),
-          Date.now(),
-        );
+        world.setDungeonState({
+          dungeonWing: st.dungeonWing ?? 1,
+          dungeonSeed: st.dungeonSeed ?? 0,
+          grimoireFound: st.grimoireFound ?? 0,
+          gateLeftOpen: st.gateLeftOpen ?? 0,
+          gateRightOpen: st.gateRightOpen ?? 0,
+          vaultUnlocked: st.vaultUnlocked ?? 0,
+          arrowVolleyZ: st.arrowVolleyZ ?? BRICK_DUNGEON.hall1EndZ,
+          fireBoulderZ: st.fireBoulderZ ?? BRICK_DUNGEON.boulderEndZ,
+          websBurned: st.websBurned ?? 0,
+          chompingChests,
+          nowMs: Date.now(),
+        });
       }
       let bossHp = 30;
       if (st?.animals && typeof st.animals.values === "function") {

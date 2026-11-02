@@ -18,6 +18,27 @@ import { Colliders } from "./collision";
 
 export type TimeMode = "ist" | "day" | "sunset" | "night";
 
+/**
+ * Everything the dungeon rig needs to draw the current server state.
+ * Named fields on purpose: an earlier positional version of this call had
+ * its arguments in the wrong order, and TypeScript cannot tell two numbers apart.
+ */
+export interface DungeonView {
+  dungeonWing: number;
+  dungeonSeed: number;
+  grimoireFound: number;
+  gateLeftOpen: number;
+  gateRightOpen: number;
+  vaultUnlocked: number;
+  arrowVolleyZ: number;
+  fireBoulderZ: number;
+  /** Bitmask of Floor-2 web curtains already burned (bit 0 = web 1). */
+  websBurned: number;
+  /** Bitmask of mimic chests currently chomping someone (bit 0 = chest 1). */
+  chompingChests: number;
+  nowMs: number;
+}
+
 export interface AnimalRenderState {
   id: string;
   species: string;
@@ -42,19 +63,7 @@ export interface World {
   isNight: boolean;
   setScreenTexture(tex: THREE.Texture, accentColor?: string): void;
   setFootballState(ballX: number, ballZ: number, scoreRed: number, scoreBlue: number): void;
-  setDungeonState(
-    dungeonWing: number,
-    dungeonSeed: number,
-    grimoireFound: number,
-    gateLeftOpen: number,
-    gateRightOpen: number,
-    vaultUnlocked: number,
-    arrowVolleyZ: number,
-    mimicTrapped: number,
-    websBurned: number,
-    fireBoulderZ: number,
-    nowMs: number,
-  ): void;
+  setDungeonState(view: DungeonView): void;
   syncAnimals(animals: AnimalRenderState[]): void;
   paintMuralData(pixels: number[]): void;
   paintMuralPixel(x: number, y: number, colorIdx: number): void;
@@ -398,32 +407,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         updateFootballBoard(scoreRed, scoreBlue);
       }
     },
-    setDungeonState(
-      dungeonWing: number,
-      dungeonSeed: number,
-      grimoireFound: number,
-      gateLeftOpen: number,
-      gateRightOpen: number,
-      vaultUnlocked: number,
-      arrowVolleyZ: number,
-      mimicTrapped: number,
-      websBurned: number,
-      fireBoulderZ: number,
-      nowMs: number,
-    ) {
-      dungeonRig.update(
-        dungeonWing,
-        dungeonSeed,
-        grimoireFound,
-        gateLeftOpen,
-        gateRightOpen,
-        vaultUnlocked,
-        arrowVolleyZ,
-        mimicTrapped,
-        websBurned,
-        fireBoulderZ,
-        nowMs,
-      );
+    setDungeonState(view: DungeonView) {
+      dungeonRig.update(view);
     },
     syncAnimals(animals: AnimalRenderState[]) {
       const now = performance.now();
@@ -1070,9 +1055,12 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
     [88, 148, 24, 18.0],
     [-75, 185, 28, 24.0],
     [75, 185, 28, 24.0],
-    [-42, 212, 30, 26.0],
-    [42, 212, 30, 26.0],
-    [0, 224, 34, 30.0],
+    // Keep rock peaks clear of the dungeon hallway (|x| < 23, z 120..480):
+    // a peak at (0, 224) used to block the Floor 1 → 2 staircase entirely.
+    [-52, 212, 26, 26.0],
+    [52, 212, 26, 26.0],
+    [-60, 260, 34, 30.0],
+    [60, 260, 34, 30.0],
   ];
   for (const [dx, dz, rad, h] of duneSpecs) {
     const isPeak = h >= 12;
@@ -1799,19 +1787,20 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
   });
 
   return {
-    update(
-      dungeonWing: number,
-      dungeonSeed: number,
-      grimoireFound: number,
-      gateLeftOpen: number,
-      gateRightOpen: number,
-      vaultUnlocked: number,
-      arrowVolleyZ: number,
-      mimicTrapped: number,
-      websBurned: number,
-      fireBoulderZ: number,
-      nowMs: number,
-    ) {
+    update(view: DungeonView) {
+      const {
+        dungeonWing,
+        dungeonSeed,
+        grimoireFound,
+        gateLeftOpen,
+        gateRightOpen,
+        vaultUnlocked,
+        arrowVolleyZ,
+        chompingChests,
+        websBurned,
+        fireBoulderZ,
+        nowMs,
+      } = view;
       const tSec = nowMs / 1000;
 
       // 1. Floor 1 Cracked vs Intact Frost Slabs
@@ -1839,7 +1828,7 @@ function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
         if (isReal && grimoireFound === 1) {
           entry.lidGroup.rotation.x += (-1.15 - entry.lidGroup.rotation.x) * 0.15;
           entry.teethGroup.visible = false;
-        } else if (!isReal && mimicTrapped > 0) {
+        } else if (!isReal && (chompingChests & (1 << idx)) !== 0) {
           entry.lidGroup.rotation.x = -0.85 + Math.sin(tSec * 16) * 0.32;
           entry.teethGroup.visible = true;
           entry.tongueMesh.rotation.y = Math.sin(tSec * 14) * 0.35;
