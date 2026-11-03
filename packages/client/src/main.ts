@@ -1112,9 +1112,10 @@ function frame(now: number) {
         playerZ: mz,
         isNight: world.isNight,
         timeMode: world.timeMode,
-        inCinema,
+        inCinema: inCinema || cinema.expanded,
         moviePlaying: Boolean(st?.movieUrl && st?.moviePaused !== 1),
         inArcadeModal: activities.isModalOpen,
+        inPoker: pokerSeatIndexOf(session.me.seatId) >= 0 || Boolean(pokerPanel.currentRoom),
         animals: soundAnimals,
       });
     } else {
