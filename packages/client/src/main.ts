@@ -70,6 +70,7 @@ import { ActivitiesController } from "./ui/activities";
 import { PokerPanel } from "./ui/poker";
 import { AdminPanel } from "./ui/admin";
 import { PokerAudio } from "./world/pokerAudio";
+import { GameAudio, type AnimalSoundState } from "./world/gameAudio";
 import { joinPokerTable } from "./net/poker";
 import type { PokerSeatView, PokerTableSnapshot } from "./world/pokerTable";
 import type { ChipStack } from "@vi/shared/poker";
@@ -90,11 +91,28 @@ window.addEventListener("keydown", (e) => {
   }
 });
 const pokerAudio = new PokerAudio();
+const gameAudio = new GameAudio();
 pokerPanel.setAudioState(pokerAudio.soundsOn, pokerAudio.voiceOn);
 pokerPanel.onToggleSounds = (on) => pokerAudio.setSounds(on);
 pokerPanel.onToggleVoice = (on) => pokerAudio.setVoice(on);
-window.addEventListener("pointerdown", () => pokerAudio.unlock(), { once: true });
-window.addEventListener("keydown", () => pokerAudio.unlock(), { once: true });
+const audioBtn = document.getElementById("audio-btn") as HTMLButtonElement | null;
+if (audioBtn) {
+  const syncAudioBtn = () => {
+    audioBtn.textContent = gameAudio.enabled ? "🔊 Sound: On" : "🔇 Sound: Off";
+    audioBtn.classList.toggle("muted", !gameAudio.enabled);
+  };
+  syncAudioBtn();
+  audioBtn.addEventListener("click", () => {
+    gameAudio.toggle();
+    syncAudioBtn();
+  });
+}
+const unlockAllAudio = () => {
+  pokerAudio.unlock();
+  gameAudio.unlock();
+};
+window.addEventListener("pointerdown", unlockAllAudio, { once: true });
+window.addEventListener("keydown", unlockAllAudio, { once: true });
 
 /** The hub avatar sitting in a poker seat (me or a remote), for speech bubbles. */
 function avatarAtPokerSeat(seatIndex: number): Avatar | undefined {
@@ -1002,6 +1020,7 @@ function frame(now: number) {
         });
       }
       let bossHp = 30;
+      const soundAnimals: AnimalSoundState[] = [];
       if (st?.animals && typeof st.animals.values === "function") {
         const animalsList: AnimalRenderState[] = [];
         for (const a of st.animals.values()) {
@@ -1014,6 +1033,14 @@ function frame(now: number) {
             z: a.z,
             rot: a.rot ?? 0,
             hp: a.hp ?? 1,
+            maxHp: a.maxHp ?? 1,
+          });
+          soundAnimals.push({
+            id: a.id,
+            species: a.species,
+            x: a.x,
+            z: a.z,
+            hp: a.hp ?? 0,
             maxHp: a.maxHp ?? 1,
           });
         }
@@ -1079,12 +1106,33 @@ function frame(now: number) {
         activities.updateTimeButtonLabel();
         hud.setMic("on", session.voice.listeners);
       }
+
+      gameAudio.update({
+        playerX: mx,
+        playerZ: mz,
+        isNight: world.isNight,
+        timeMode: world.timeMode,
+        inCinema,
+        moviePlaying: Boolean(st?.movieUrl && st?.moviePaused !== 1),
+        inArcadeModal: activities.isModalOpen,
+        animals: soundAnimals,
+      });
     } else {
       controls.yaw += dt * 0.08;
       controls.pitch = 0.4;
       controls.distance = 22;
       camTarget.set(0, 2.5, 0);
       controls.updateCamera(world.camera, camTarget);
+      gameAudio.update({
+        playerX: 0,
+        playerZ: 0,
+        isNight: world.isNight,
+        timeMode: world.timeMode,
+        inCinema: false,
+        moviePlaying: false,
+        inArcadeModal: false,
+        animals: [],
+      });
     }
 
     world.render();
