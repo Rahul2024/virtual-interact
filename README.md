@@ -92,6 +92,18 @@ packages/
 | `npm test` | boots a server and joins two SDK clients to check movement, clamping and chat |
 | `npm start` | world server only (what you'd run on a box) |
 
+## Moderating
+
+Set `ADMIN_KEY` on the server (locally: create `packages/world-server/.env`
+with `ADMIN_KEY=your-secret`; on Render: the server's Environment tab). In the
+world press **Ctrl+Shift+A**, enter the key once, and you get the moderator
+panel: the live player list with **Kick** and **Ban**, and a sky setting for
+everyone (day / sunset / night / Indian time / back to auto). Every command is
+verified by the server; the key never leaves it.
+
+Duplicate players are prevented at the source: a browser that rejoins
+replaces its previous body, and anyone silent for 60 seconds is dropped.
+
 ## Going live for free
 
 [docs/DEPLOY.md](docs/DEPLOY.md) walks through it click by click: the code on

@@ -78,6 +78,12 @@ gives a free Redis database that keeps them.
    Render redeploys the server.
 5. Check **Logs**: you should see `[ideas] 0 ideas loaded (upstash redis)`.
 
+## 3b. Moderator key
+
+Render → **virtual-interact-server** → **Environment** → add `ADMIN_KEY` with
+a long secret only you know. In the world, Ctrl+Shift+A opens the moderator
+panel; enter the key once per visit.
+
 ## 4. Share it
 
 Send people the static site link. Things to tell them:

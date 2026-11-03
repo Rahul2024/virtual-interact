@@ -348,6 +348,26 @@
       </div>
     </div>
 
+    <div id="admin" class="admin" hidden>
+      <div class="admin-card">
+        <header class="ideas-head">
+          <div><h2>Moderator</h2><p>Ctrl+Shift+A to toggle. Every command is checked by the server.</p></div>
+          <button id="admin-close" type="button" class="ideas-x" aria-label="Close">×</button>
+        </header>
+        <div id="admin-login" class="admin-login">
+          <input id="admin-key" type="password" placeholder="Admin key" autocomplete="off" />
+          <button id="admin-login-btn" type="button">Log in</button>
+        </div>
+        <div id="admin-status" class="muted"></div>
+        <div id="admin-tools" hidden>
+          <div class="admin-section">Sky for everyone</div>
+          <div id="admin-time" class="admin-time"></div>
+          <div class="admin-section">People here</div>
+          <div id="admin-players" class="admin-players"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="join" class="join">
       <form id="join-form" class="join-card" autocomplete="off">
         <h1>Virtual Interact</h1>

@@ -1,8 +1,12 @@
 import { Room, definePlugins, type Client } from "colyseus";
+import { timingSafeEqual } from "node:crypto";
 import { WebRTCPlugin } from "colyseus/plugins/webrtc";
 import type { MessageContext } from "@colyseus/shared-types";
 import {
+  ADMIN_MSG,
   ANIM,
+  CLOSE,
+  PRESENCE,
   ARCADE_MSG,
   BRICK_DUNGEON,
   dungeonClosedDoors,
@@ -68,9 +72,15 @@ import {
 import { ForestAnimal, HubState, Player } from "./HubState.js";
 import { ideas, ideasReady, IdeaRejected } from "../ideas/index.js";
 
+/** Browsers banned by an admin, for the life of this server process. */
+const bannedClientIds = new Set<string>();
+
 interface Session {
   lastMoveAt: number;
   lastChatAt: number;
+  /** Last message of any kind; silence past PRESENCE.idleDropMs gets you dropped. */
+  lastSeenAt: number;
+  admin: boolean;
   lastTrapHitAt: number;
   /** Last position that passed the dungeon wall check; where we put you back if you cross a door. */
   lastSafeX: number;
@@ -141,6 +151,14 @@ export class HubRoom extends Room<{ state: HubState }> {
   private dungeonResetTimer: ReturnType<typeof setTimeout> | undefined;
 
   override messages = {
+    [MSG.heartbeat]: (client: Client) => {
+      const sess = this.sessions.get(client.sessionId);
+      if (sess) sess.lastSeenAt = Date.now();
+    },
+    [ADMIN_MSG.login]: (client: Client, payload: { key?: string }) => this.onAdminLogin(client, payload),
+    [ADMIN_MSG.kick]: (client: Client, payload: { sessionId?: string }) => this.onAdminKick(client, payload, false),
+    [ADMIN_MSG.ban]: (client: Client, payload: { sessionId?: string }) => this.onAdminKick(client, payload, true),
+    [ADMIN_MSG.time]: (client: Client, payload: { mode?: string }) => this.onAdminTime(client, payload),
     [MSG.move]: (client: Client, payload: MoveMessage) => this.onMove(client, payload),
     [MSG.chat]: (client: Client, payload: ChatSend) => this.onChat(client, payload),
     [MSG.mic]: (client: Client, payload: MicMessage) => {
@@ -300,7 +318,14 @@ export class HubRoom extends Room<{ state: HubState }> {
     }
   }
 
+  private sweepAccumulator = 0;
+
   private tickWorld(dt: number) {
+    this.sweepAccumulator += dt;
+    if (this.sweepAccumulator > 5) {
+      this.sweepAccumulator = 0;
+      this.sweepIdle();
+    }
     this.tickFootball(dt);
     this.tickAnimals(dt);
     this.tickBrickDungeon(dt);
@@ -769,6 +794,13 @@ export class HubRoom extends Room<{ state: HubState }> {
     }
   }
 
+  override onAuth(_client: Client, options: Partial<JoinOptions> | undefined): boolean {
+    const rawId = options?.clientId;
+    const clientId = typeof rawId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(rawId) ? `c:${rawId}` : "";
+    if (clientId && bannedClientIds.has(clientId)) throw new Error("You have been removed from this server.");
+    return true;
+  }
+
   override onJoin(client: Client, options: Partial<JoinOptions> | undefined): void {
     const player = new Player();
     player.name = sanitizeName(options?.name);
@@ -778,6 +810,16 @@ export class HubRoom extends Room<{ state: HubState }> {
     const clientId =
       typeof rawId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(rawId) ? `c:${rawId}` : `s:${client.sessionId}`;
     player.clientId = clientId;
+
+    // One body per browser: a rejoin (reload, network blip, phone waking up)
+    // replaces the previous session instead of standing next to it.
+    for (const [sid, other] of this.state.players.entries()) {
+      if (sid !== client.sessionId && other.clientId === clientId) {
+        const old = this.clients.find((c) => c.sessionId === sid);
+        this.dropPlayer(sid, "replaced by a new connection");
+        old?.leave(CLOSE.replaced);
+      }
+    }
 
     const angle = Math.random() * Math.PI * 2;
     const radius = 7 + Math.random() * 3;
@@ -798,6 +840,8 @@ export class HubRoom extends Room<{ state: HubState }> {
     this.sessions.set(client.sessionId, {
       lastMoveAt: now,
       lastChatAt: 0,
+      lastSeenAt: now,
+      admin: false,
       lastTrapHitAt: 0,
       lastSafeX: player.x,
       lastSafeZ: player.z,
@@ -818,15 +862,79 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   override onLeave(client: Client): void {
-    const player = this.state.players.get(client.sessionId);
-    this.state.players.delete(client.sessionId);
-    this.sessions.delete(client.sessionId);
-    if (this.state.cinemaHostId === client.sessionId) {
+    this.dropPlayer(client.sessionId, "left");
+  }
+
+  /** Removes a player from the world. Safe to call twice. */
+  private dropPlayer(sessionId: string, why: string): void {
+    const player = this.state.players.get(sessionId);
+    if (!player && !this.sessions.has(sessionId)) return;
+    this.state.players.delete(sessionId);
+    this.sessions.delete(sessionId);
+    if (this.state.cinemaHostId === sessionId) {
       this.state.cinemaHostId = "";
       this.state.cinemaHostName = "";
     }
     this.evaluateCinemaHost(true);
-    console.log(`[hub] ${player?.name ?? client.sessionId} left (${this.clients.length} in room)`);
+    console.log(`[hub] ${player?.name ?? sessionId} ${why} (${this.clients.length} in room)`);
+  }
+
+  /** Drops anyone whose connection has gone quiet, whatever the socket claims. */
+  private sweepIdle(): void {
+    const now = Date.now();
+    for (const [sid, sess] of this.sessions.entries()) {
+      if (now - sess.lastSeenAt > PRESENCE.idleDropMs) {
+        const client = this.clients.find((c) => c.sessionId === sid);
+        this.dropPlayer(sid, "timed out");
+        client?.leave(CLOSE.idle);
+      }
+    }
+  }
+
+  // ---- Admin --------------------------------------------------------------------------
+
+  private onAdminLogin(client: Client, payload: { key?: string }): { ok: boolean; reason?: string } {
+    const sess = this.sessions.get(client.sessionId);
+    const expected = process.env.ADMIN_KEY ?? "";
+    const given = typeof payload?.key === "string" ? payload.key : "";
+    if (!sess) return { ok: false, reason: "not in room" };
+    if (!expected) return { ok: false, reason: "ADMIN_KEY is not set on the server" };
+    const a = Buffer.from(given);
+    const b = Buffer.from(expected);
+    const ok = a.length === b.length && timingSafeEqual(a, b);
+    sess.admin = ok;
+    console.log(`[admin] ${this.state.players.get(client.sessionId)?.name ?? client.sessionId} login ${ok ? "ok" : "failed"}`);
+    return ok ? { ok } : { ok, reason: "wrong key" };
+  }
+
+  private requireAdmin(client: Client): boolean {
+    const sess = this.sessions.get(client.sessionId);
+    if (sess?.admin) return true;
+    client.send(MSG.notice, { text: "Admin only." } satisfies NoticeMessage);
+    return false;
+  }
+
+  private onAdminKick(client: Client, payload: { sessionId?: string }, ban: boolean): void {
+    if (!this.requireAdmin(client)) return;
+    const sid = typeof payload?.sessionId === "string" ? payload.sessionId : "";
+    const target = this.state.players.get(sid);
+    if (!target) return;
+    if (sid === client.sessionId) return;
+    const name = target.name;
+    if (ban && target.clientId.startsWith("c:")) bannedClientIds.add(target.clientId);
+    const victim = this.clients.find((c) => c.sessionId === sid);
+    victim?.send(MSG.notice, { text: ban ? "You have been removed from this server." : "You were kicked by a moderator." } satisfies NoticeMessage);
+    this.dropPlayer(sid, ban ? "banned" : "kicked");
+    victim?.leave(ban ? CLOSE.banned : CLOSE.kicked);
+    this.broadcast(MSG.notice, { text: `${name} was ${ban ? "removed" : "kicked"} by a moderator.` } satisfies NoticeMessage);
+  }
+
+  private onAdminTime(client: Client, payload: { mode?: string }): void {
+    if (!this.requireAdmin(client)) return;
+    const mode = payload?.mode;
+    if (mode !== "auto" && mode !== "day" && mode !== "sunset" && mode !== "night" && mode !== "ist") return;
+    this.state.timeMode = mode;
+    this.broadcast(MSG.notice, { text: mode === "auto" ? "Time of day is back to everyone's own setting." : `A moderator set the sky to ${mode}.` } satisfies NoticeMessage);
   }
 
   override onDispose(): void {
@@ -1498,6 +1606,7 @@ export class HubRoom extends Room<{ state: HubState }> {
     const now = Date.now();
     const dt = Math.max((now - session.lastMoveAt) / 1000, 1 / 60);
     session.lastMoveAt = now;
+    session.lastSeenAt = now;
 
     if (player.seatId >= 0 && payload.anim === ANIM.sit) {
       const seat = CINEMA_SEATS[player.seatId];
@@ -1697,6 +1806,7 @@ export class HubRoom extends Room<{ state: HubState }> {
 
     const text = sanitizeChat(payload?.text);
     if (text.length === 0) return;
+    session.lastSeenAt = Date.now();
 
     const now = Date.now();
     if (now - session.lastChatAt < 500) {

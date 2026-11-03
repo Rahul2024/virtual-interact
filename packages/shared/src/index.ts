@@ -554,6 +554,36 @@ export const MSG = {
   mic: "mic",
   seat: "seat",
   emote: "emote",
+  /** client → server, every 15 s: still here (sockets can lie). */
+  heartbeat: "heartbeat",
+} as const;
+
+/** How long a silent player survives before the server drops them (ms). */
+export const PRESENCE = {
+  heartbeatMs: 15_000,
+  idleDropMs: 60_000,
+} as const;
+
+/** Developer / moderator controls. Every command is checked on the server. */
+export const ADMIN_MSG = {
+  /** request: { key } → { ok } */
+  login: "admin:login",
+  /** { sessionId } */
+  kick: "admin:kick",
+  /** { sessionId }: kicks and blocks that browser for the rest of the server's life */
+  ban: "admin:ban",
+  /** { mode: "auto" | "day" | "sunset" | "night" | "ist" } for everyone */
+  time: "admin:time",
+} as const;
+
+export type ServerTimeMode = "auto" | "day" | "sunset" | "night" | "ist";
+
+/** WebSocket close codes we use so the client can explain what happened. */
+export const CLOSE = {
+  replaced: 4012,
+  kicked: 4013,
+  banned: 4014,
+  idle: 4015,
 } as const;
 
 export interface MicMessage {

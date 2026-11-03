@@ -1426,6 +1426,94 @@ body {
   border: 1px solid rgba(201, 162, 74, 0.7);
 }
 
+/* Moderator panel */
+.admin {
+  position: fixed;
+  top: 60px;
+  left: 16px;
+  width: min(380px, calc(100vw - 32px));
+  z-index: 9;
+  pointer-events: auto;
+}
+.admin[hidden] {
+  display: none;
+}
+.admin-card {
+  padding: 16px 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: rgba(20, 24, 33, 0.96);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.admin-card h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+}
+.admin-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-login {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.admin-login input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+}
+.admin button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin button.active {
+  background: var(--accent);
+}
+.admin button.danger {
+  background: rgba(242, 109, 109, 0.25);
+}
+.admin-section {
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.admin-time {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.admin-players {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.admin-row span {
+  flex: 1;
+}
+
 /* Join screen */
 .join {
   position: fixed;

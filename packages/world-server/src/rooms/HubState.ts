@@ -45,6 +45,8 @@ export type ForestAnimal = SchemaType<typeof ForestAnimal>;
 export const HubState = schema(
   {
     zone: t.string().default("hub"),
+    /** Set by an admin for everyone; "auto" lets each client pick. */
+    timeMode: t.string().default("auto" as string),
     players: t.map(Player),
     /** Session ID of the authoritative Cinema Host (1st person in the Cinema Hall). */
     cinemaHostId: t.string().default(""),

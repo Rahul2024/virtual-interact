@@ -16,6 +16,7 @@ services:
       # To keep the Idea Wall between restarts, add these two in the dashboard
       # (Environment tab) after creating a free Upstash Redis database:
       #   UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+      # Moderator panel (Ctrl+Shift+A in the world): set ADMIN_KEY to a long secret.
 
   # The client: static files on Render's CDN, with HTTPS (so the mic works).
   - type: web

@@ -24,6 +24,8 @@ import {
   getWorldFloorY,
   isInArcadeZone,
   POKER_SEAT_SPOTS,
+  PRESENCE,
+  CLOSE,
   POKER_TABLE,
   nearestPokerSeat,
   pokerSeatIdFor,
@@ -66,6 +68,7 @@ import { IdeasPanel } from "./ui/ideas";
 import { CinemaController, type CinemaFriendPeer } from "./ui/cinema";
 import { ActivitiesController } from "./ui/activities";
 import { PokerPanel } from "./ui/poker";
+import { AdminPanel } from "./ui/admin";
 import { PokerAudio } from "./world/pokerAudio";
 import { joinPokerTable } from "./net/poker";
 import type { PokerSeatView, PokerTableSnapshot } from "./world/pokerTable";
@@ -79,6 +82,13 @@ const ideasPanel = new IdeasPanel();
 const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
 const pokerPanel = new PokerPanel();
+const adminPanel = new AdminPanel();
+window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && e.code === "KeyA" && session) {
+    e.preventDefault();
+    adminPanel.toggle();
+  }
+});
 const pokerAudio = new PokerAudio();
 pokerPanel.setAudioState(pokerAudio.soundsOn, pokerAudio.voiceOn);
 pokerPanel.onToggleSounds = (on) => pokerAudio.setSounds(on);
@@ -853,6 +863,8 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     room.onMessage(MSG.notice, (m: NoticeMessage) => hud.addSystem(m.text));
 
     hud.onSend = (text) => room.send(MSG.chat, { text });
+    adminPanel.attach(room);
+    const heartbeat = setInterval(() => room.send(MSG.heartbeat), PRESENCE.heartbeatMs);
     hud.onFocusChange = (focused) => (controls.blocked = focused || cinema.expanded || activities.isModalOpen);
 
     // Idea Wall
@@ -876,6 +888,8 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       .catch((err) => console.warn("could not load ideas", err));
 
     const end = (reason: string) => {
+      clearInterval(heartbeat);
+      adminPanel.detach();
       pokerPanel.detach();
       voice.dispose();
       hud.setMic("off");
@@ -935,6 +949,9 @@ function frame(now: number) {
       session.voice.update(now);
 
       pokerPanel.render();
+      adminPanel.render();
+      const serverTime = session.room.state?.timeMode;
+      if (serverTime && serverTime !== "auto" && world.timeMode !== serverTime) world.timeMode = serverTime as typeof world.timeMode;
       if (pokerPanel.turnJustStarted()) pokerAudio.yourTurn();
       const pokerSnap = pokerSnapshot();
       if (pokerSnap) world.pokerTable.update(pokerSnap);
