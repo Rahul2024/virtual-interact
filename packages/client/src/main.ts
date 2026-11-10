@@ -107,6 +107,52 @@ if (audioBtn) {
     syncAudioBtn();
   });
 }
+
+const fsBtn = document.getElementById("fullscreen-btn") as HTMLButtonElement | null;
+const fsIcon = document.getElementById("fs-icon") as HTMLSpanElement | null;
+const fsLabel = fsBtn?.querySelector(".fs-label") as HTMLSpanElement | null;
+if (fsBtn) {
+  const isFs = (): boolean =>
+    Boolean(document.fullscreenElement || (document as unknown as { webkitFullscreenElement?: Element }).webkitFullscreenElement);
+
+  const updateFsBtn = () => {
+    const full = isFs();
+    if (fsIcon) fsIcon.textContent = full ? "↙" : "⛶";
+    if (fsLabel) fsLabel.textContent = full ? "Exit" : "Full";
+    fsBtn.classList.toggle("active", full);
+  };
+
+  fsBtn.addEventListener("click", async () => {
+    try {
+      if (isFs()) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as unknown as { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen) {
+          await (document as unknown as { webkitExitFullscreen: () => Promise<void> }).webkitExitFullscreen();
+        }
+      } else {
+        const root = document.documentElement as HTMLElement & {
+          webkitRequestFullscreen?: () => Promise<void>;
+        };
+        if (root.requestFullscreen) {
+          await root.requestFullscreen();
+        } else if (root.webkitRequestFullscreen) {
+          await root.webkitRequestFullscreen();
+        } else {
+          hud.addSystem("📱 On iPhone: tap Safari Share ⎋ at bottom & choose 'Add to Home Screen' for full screen!");
+        }
+      }
+    } catch {
+      hud.addSystem("📱 On iPhone: tap Safari Share ⎋ at bottom & choose 'Add to Home Screen' for full screen!");
+    }
+    updateFsBtn();
+  });
+
+  document.addEventListener("fullscreenchange", updateFsBtn);
+  document.addEventListener("webkitfullscreenchange", updateFsBtn);
+  updateFsBtn();
+}
+
 const unlockAllAudio = () => {
   pokerAudio.unlock();
   gameAudio.unlock();

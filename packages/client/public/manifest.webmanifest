@@ -1,0 +1,9 @@
+{
+  "name": "Virtual Interact",
+  "short_name": "VirtualInteract",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1218",
+  "theme_color": "#0f1218",
+  "description": "A 3D virtual world in the browser. Walk around, find people, talk, and play."
+}

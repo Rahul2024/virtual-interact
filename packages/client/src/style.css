@@ -310,6 +310,10 @@ body {
 .hud-button.has-pending {
   border-color: var(--amber);
 }
+.hud-button.active {
+  border-color: var(--accent);
+  background: rgba(91, 141, 239, 0.22);
+}
 .pill-badge {
   padding: 1px 6px;
   border-radius: 999px;
