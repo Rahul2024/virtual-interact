@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="color-scheme" content="dark" />
     <title>Virtual Interact</title>
     <link rel="stylesheet" href="/src/style.css" />
@@ -110,10 +112,30 @@
         WASD move · Shift run · Enter chat · M mic · E interact / sit · F expand screen
       </div>
 
+      <!-- Mobile Touch Controls: Left Thumb Joystick + Right Action Pad -->
+      <div id="mobile-controls" class="mobile-controls" aria-label="Touch Controls">
+        <div id="mobile-joystick-zone" class="mobile-joystick-zone">
+          <div id="mobile-joystick-base" class="mobile-joystick-base">
+            <div id="mobile-joystick-stick" class="mobile-joystick-stick"></div>
+          </div>
+        </div>
+        <div class="mobile-action-pad">
+          <button id="mobile-btn-interact" type="button" class="mobile-act-btn interact" title="Interact / Sit (E)">
+            🖐️<span>Use</span>
+          </button>
+          <button id="mobile-btn-attack" type="button" class="mobile-act-btn attack" title="Attack / Kick / Struggle (Space)">
+            ⚔️<span>Act</span>
+          </button>
+          <button id="mobile-btn-run" type="button" class="mobile-act-btn run" title="Toggle Sprint (Shift)">
+            🏃<span>Run</span>
+          </button>
+        </div>
+      </div>
+
       <div class="chat">
         <div id="chat-log" class="chat-log"></div>
         <form id="chat-form" class="chat-form" autocomplete="off">
-          <input id="chat-input" type="text" maxlength="240" placeholder="Press Enter to say something" />
+          <input id="chat-input" type="text" maxlength="240" placeholder="Tap or press Enter to chat…" />
         </form>
       </div>
     </div>

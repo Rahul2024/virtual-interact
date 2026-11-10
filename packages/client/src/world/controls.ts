@@ -2,15 +2,21 @@ import * as THREE from "three";
 import { CINEMA_HALL } from "@vi/shared";
 
 /**
- * Keyboard movement plus a drag-to-orbit third-person camera.
- * Also supports Cinema Seated View: when seated in the auditorium, the camera
- * frames both the big cinema screen ahead and the people sitting beside you.
+ * Keyboard + Mobile Touch movement & camera controller:
+ * - Desktop: WASD / Arrow keys + mouse drag-to-orbit + scroll wheel zoom.
+ * - Mobile / Touch: Virtual thumb joystick vector + single-finger drag-to-orbit
+ *   + two-finger pinch-to-zoom (supports simultaneous left-thumb joystick and right-thumb camera look).
+ * - Also supports Cinema Seated View and Poker Table Seated View.
  */
 export class Controls {
   private keys = new Set<string>();
-  private dragging = false;
-  private lastX = 0;
-  private lastY = 0;
+  private activePointers = new Map<number, { x: number; y: number }>();
+  private lastPinchDist = 0;
+
+  private joyX = 0;
+  private joyY = 0;
+  private joyRunning = false;
+  private mobileRunLock = false;
 
   yaw = Math.PI; // camera behind the player, player facing -z on spawn
   pitch = 0.35;
@@ -31,26 +37,59 @@ export class Controls {
       if (e.code === "Space") e.preventDefault();
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.code));
-    window.addEventListener("blur", () => this.keys.clear());
+    window.addEventListener("blur", () => {
+      this.keys.clear();
+      this.activePointers.clear();
+      this.lastPinchDist = 0;
+    });
 
     canvas.addEventListener("pointerdown", (e) => {
-      this.dragging = true;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
-      canvas.setPointerCapture(e.pointerId);
+      this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      if (this.activePointers.size === 2) {
+        const pts = [...this.activePointers.values()];
+        this.lastPinchDist = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+      }
     });
+
     canvas.addEventListener("pointermove", (e) => {
-      if (!this.dragging) return;
-      const dx = e.clientX - this.lastX;
-      const dy = e.clientY - this.lastY;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
-      this.yaw -= dx * 0.005;
-      this.pitch = THREE.MathUtils.clamp(this.pitch + dy * 0.005, -0.08, 1.25);
+      const prev = this.activePointers.get(e.pointerId);
+      if (!prev) return;
+
+      if (this.activePointers.size === 1) {
+        const dx = e.clientX - prev.x;
+        const dy = e.clientY - prev.y;
+        prev.x = e.clientX;
+        prev.y = e.clientY;
+        const sens = e.pointerType === "touch" ? 0.0065 : 0.005;
+        this.yaw -= dx * sens;
+        this.pitch = THREE.MathUtils.clamp(this.pitch + dy * sens, -0.08, 1.25);
+      } else if (this.activePointers.size >= 2) {
+        prev.x = e.clientX;
+        prev.y = e.clientY;
+        const pts = [...this.activePointers.values()];
+        const dist = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+        if (this.lastPinchDist > 0) {
+          const delta = this.lastPinchDist - dist;
+          this.distance = THREE.MathUtils.clamp(this.distance + delta * 0.025, 2.5, 14);
+        }
+        this.lastPinchDist = dist;
+      }
     });
-    const stop = () => (this.dragging = false);
-    canvas.addEventListener("pointerup", stop);
-    canvas.addEventListener("pointercancel", stop);
+
+    const stopPointer = (e: PointerEvent) => {
+      this.activePointers.delete(e.pointerId);
+      if (this.activePointers.size < 2) {
+        this.lastPinchDist = 0;
+      }
+    };
+    canvas.addEventListener("pointerup", stopPointer);
+    canvas.addEventListener("pointercancel", stopPointer);
+
     canvas.addEventListener(
       "wheel",
       (e) => {
@@ -61,19 +100,38 @@ export class Controls {
     );
   }
 
+  /** Updates the virtual mobile thumbstick state (-1..1 for x and y). */
+  setJoystick(x: number, y: number, running: boolean) {
+    this.joyX = x;
+    this.joyY = y;
+    this.joyRunning = running;
+  }
+
+  toggleMobileRun(): boolean {
+    this.mobileRunLock = !this.mobileRunLock;
+    return this.mobileRunLock;
+  }
+
   get running(): boolean {
-    return this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    return (
+      this.keys.has("ShiftLeft") ||
+      this.keys.has("ShiftRight") ||
+      this.joyRunning ||
+      this.mobileRunLock
+    );
   }
 
   /** Desired movement direction in world XZ, unit length or zero. */
   moveVector(out: THREE.Vector2): THREE.Vector2 {
-    let f = 0;
-    let s = 0;
+    if (this.blocked) return out.set(0, 0);
+
+    let f = -this.joyY;
+    let s = this.joyX;
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) f += 1;
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) f -= 1;
     if (this.keys.has("KeyD") || this.keys.has("ArrowRight")) s += 1;
     if (this.keys.has("KeyA") || this.keys.has("ArrowLeft")) s -= 1;
-    if (f === 0 && s === 0) return out.set(0, 0);
+    if (Math.abs(f) < 0.05 && Math.abs(s) < 0.05) return out.set(0, 0);
 
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
@@ -83,7 +141,7 @@ export class Controls {
     return out.normalize();
   }
 
-  /**Snap camera smoothly when sitting down in a cinema seat. */
+  /** Snap camera smoothly when sitting down in a cinema seat. */
   enterCinemaSeatView() {
     this.seatedInCinema = true;
     this.yaw = 0; // Camera placed +Z behind seated avatar, looking -Z at the screen

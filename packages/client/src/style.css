@@ -1622,3 +1622,219 @@ body {
 .join-foot a {
   color: var(--muted);
 }
+
+/* =========================================================================
+   MOBILE & TOUCH CONTROLS (Virtual Joystick, Action Pad, Responsive HUD)
+   ========================================================================= */
+
+.mobile-controls {
+  display: none;
+  pointer-events: none;
+}
+
+.mobile-joystick-zone {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 16px));
+  bottom: max(84px, calc(env(safe-area-inset-bottom, 12px) + 74px));
+  width: 128px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-joystick-base {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 26, 38, 0.55) 0%, rgba(12, 16, 24, 0.78) 100%);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 0 12px rgba(91, 141, 239, 0.18);
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(6px);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mobile-joystick-base.active {
+  border-color: rgba(91, 141, 239, 0.75);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 16px rgba(91, 141, 239, 0.35);
+}
+
+.mobile-joystick-stick {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #7aa5ff, #4776d6);
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  will-change: transform;
+}
+
+.mobile-action-pad {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 16px));
+  bottom: max(84px, calc(env(safe-area-inset-bottom, 12px) + 74px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobile-act-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: rgba(16, 20, 30, 0.82);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.mobile-act-btn span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mobile-act-btn:active {
+  transform: scale(0.92);
+  border-color: var(--accent);
+}
+
+.mobile-act-btn.attack {
+  border-color: rgba(242, 163, 58, 0.55);
+  background: rgba(42, 24, 16, 0.82);
+}
+
+.mobile-act-btn.interact {
+  border-color: rgba(91, 141, 239, 0.55);
+  background: rgba(18, 28, 48, 0.82);
+}
+
+.mobile-act-btn.run.active {
+  border-color: var(--green);
+  background: rgba(20, 48, 28, 0.88);
+  box-shadow: 0 0 14px rgba(111, 207, 122, 0.45);
+}
+
+.mobile-act-btn.run.active span {
+  color: var(--green);
+}
+
+@media (pointer: coarse), (max-width: 900px) {
+  .mobile-controls {
+    display: block;
+  }
+  .hud-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .hud-top {
+    top: max(10px, env(safe-area-inset-top, 10px));
+    left: max(10px, env(safe-area-inset-left, 10px));
+    gap: 6px;
+  }
+  .hud-title,
+  .hud-count {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+  .hud-right {
+    top: max(48px, calc(env(safe-area-inset-top, 10px) + 38px));
+    left: max(10px, env(safe-area-inset-left, 10px));
+    right: max(10px, env(safe-area-inset-right, 10px));
+    overflow-x: auto;
+    padding-bottom: 4px;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+  .hud-right::-webkit-scrollbar {
+    display: none;
+  }
+  .hud-button {
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex: none;
+  }
+  .chat {
+    left: max(10px, env(safe-area-inset-left, 10px));
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    width: min(260px, calc(100vw - 96px));
+  }
+  .chat-log {
+    max-height: 78px;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  .chat-form input {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .activity-bar {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    bottom: max(220px, calc(env(safe-area-inset-bottom, 10px) + 210px));
+    max-width: calc(100vw - 20px);
+  }
+  .activity-actions {
+    justify-content: center;
+    max-height: 88px;
+    overflow-y: auto;
+  }
+  .cinema-dock {
+    bottom: max(220px, calc(env(safe-area-inset-bottom, 10px) + 210px));
+    width: calc(100vw - 20px);
+    padding: 6px 8px;
+  }
+  .cinema-dock-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .cinema-dock-row::-webkit-scrollbar {
+    display: none;
+  }
+  .cinema-dock-row > * {
+    flex: none;
+  }
+  .poker {
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom, 8px));
+    width: auto;
+  }
+  .poker-card {
+    max-height: 62vh;
+    padding: 10px 12px;
+  }
+  .ideas-card {
+    width: calc(100vw - 16px);
+    max-height: 86vh;
+  }
+}
+

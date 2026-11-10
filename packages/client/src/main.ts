@@ -283,6 +283,152 @@ activities.onTimeModeChange = (mode) => {
 };
 document.getElementById("ideas-open")!.addEventListener("click", () => session && ideasPanel.open());
 
+const handlePrimaryInteract = (): boolean => {
+  if (!session) return false;
+  const px = session.me.position.x;
+  const pz = session.me.position.z;
+  if (ideaWall.isNear(session.me.position)) {
+    ideasPanel.open();
+    return true;
+  }
+  if (isNearGraffitiMural(px, pz)) {
+    activities.openMuralModal();
+    return true;
+  }
+  if (pokerSeatIndexOf(session.me.seatId) >= 0) {
+    pokerPanel.detach();
+    return true;
+  }
+  const pokerSeat = nearestPokerSeat(px, pz);
+  if (pokerSeat >= 0) {
+    void sitAtPokerTable(session, pokerSeat);
+    return true;
+  }
+  if (isInArcadeZone(px, pz)) {
+    activities.openArcadeModal();
+    return true;
+  }
+  if (isInBrickDungeon(px, pz)) {
+    triggerNearestBrickDungeonAction(session, px, pz);
+    return true;
+  }
+  if (isInCampfireCircle(px, pz) || CINEMA_SEATS[session.me.seatId]?.row === 10) {
+    toggleNearestSeat(session, true);
+    return true;
+  }
+  if (isInCinemaHall(px, pz) || session.me.seatId >= 0) {
+    toggleNearestSeat(session, false);
+    return true;
+  }
+  return false;
+};
+
+const handlePrimaryAction = (): boolean => {
+  if (!session) return false;
+  if (session.me.mimicTrapped > 0) {
+    session.room.send(FOREST_MSG.dungeonAction, { action: "struggle" });
+    return true;
+  }
+  if (isInFootballStadium(session.me.position.x, session.me.position.z)) {
+    session.room.send(FOOTBALL_MSG.kick, { power: 18 });
+    return true;
+  }
+  if (
+    isInBrickDungeon(session.me.position.x, session.me.position.z) ||
+    isInForestWilderness(session.me.position.x, session.me.position.z)
+  ) {
+    attackNearestAnimal(session);
+    return true;
+  }
+  return false;
+};
+
+// Wire Mobile Virtual Joystick & Action Buttons
+const joyZone = document.getElementById("mobile-joystick-zone");
+const joyBase = document.getElementById("mobile-joystick-base");
+const joyStick = document.getElementById("mobile-joystick-stick");
+if (joyZone && joyBase && joyStick) {
+  let joyPointerId: number | null = null;
+  let originX = 0;
+  let originY = 0;
+  const maxRadius = 46;
+
+  const updateStick = (clientX: number, clientY: number) => {
+    const dx = clientX - originX;
+    const dy = clientY - originY;
+    const dist = Math.hypot(dx, dy);
+    const clamped = Math.min(dist, maxRadius);
+    const angle = dist > 0.001 ? Math.atan2(dy, dx) : 0;
+    const sx = Math.cos(angle) * clamped;
+    const sy = Math.sin(angle) * clamped;
+    joyStick.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0)`;
+
+    const normX = sx / maxRadius;
+    const normY = sy / maxRadius;
+    const isRunning = clamped / maxRadius > 0.72;
+    controls.setJoystick(normX, normY, isRunning);
+  };
+
+  const resetStick = () => {
+    joyPointerId = null;
+    joyBase.classList.remove("active");
+    joyStick.style.transform = "translate3d(0px, 0px, 0)";
+    controls.setJoystick(0, 0, false);
+  };
+
+  joyZone.addEventListener("pointerdown", (e) => {
+    if (joyPointerId !== null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    joyPointerId = e.pointerId;
+    try {
+      joyZone.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const rect = joyBase.getBoundingClientRect();
+    originX = rect.left + rect.width / 2;
+    originY = rect.top + rect.height / 2;
+    joyBase.classList.add("active");
+    updateStick(e.clientX, e.clientY);
+  });
+
+  joyZone.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== joyPointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateStick(e.clientX, e.clientY);
+  });
+
+  const endJoy = (e: PointerEvent) => {
+    if (e.pointerId !== joyPointerId) return;
+    resetStick();
+  };
+  joyZone.addEventListener("pointerup", endJoy);
+  joyZone.addEventListener("pointercancel", endJoy);
+}
+
+const mobileInteractBtn = document.getElementById("mobile-btn-interact");
+mobileInteractBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  handlePrimaryInteract();
+});
+
+const mobileAttackBtn = document.getElementById("mobile-btn-attack");
+mobileAttackBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (!handlePrimaryAction()) {
+    handlePrimaryInteract();
+  }
+});
+
+const mobileRunBtn = document.getElementById("mobile-btn-run");
+mobileRunBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  const runningOn = controls.toggleMobileRun();
+  mobileRunBtn.classList.toggle("active", runningOn);
+});
+
 window.addEventListener("keydown", (e) => {
   if (!session) return;
   if (e.code === "Escape" && cinema.expanded) {
@@ -293,69 +439,12 @@ window.addEventListener("keydown", (e) => {
   if (controls.blocked) return;
 
   if (e.code === "KeyE") {
-    const px = session.me.position.x;
-    const pz = session.me.position.z;
-    if (ideaWall.isNear(session.me.position)) {
-      e.preventDefault();
-      ideasPanel.open();
-      return;
-    }
-    if (isNearGraffitiMural(px, pz)) {
-      e.preventDefault();
-      activities.openMuralModal();
-      return;
-    }
-    if (pokerSeatIndexOf(session.me.seatId) >= 0) {
-      e.preventDefault();
-      pokerPanel.detach();
-      return;
-    }
-    const pokerSeat = nearestPokerSeat(px, pz);
-    if (pokerSeat >= 0) {
-      e.preventDefault();
-      void sitAtPokerTable(session, pokerSeat);
-      return;
-    }
-    if (isInArcadeZone(px, pz)) {
-      e.preventDefault();
-      activities.openArcadeModal();
-      return;
-    }
-    if (isInBrickDungeon(px, pz)) {
-      e.preventDefault();
-      triggerNearestBrickDungeonAction(session, px, pz);
-      return;
-    }
-    if (isInCampfireCircle(px, pz) || CINEMA_SEATS[session.me.seatId]?.row === 10) {
-      e.preventDefault();
-      toggleNearestSeat(session, true);
-      return;
-    }
-    if (isInCinemaHall(px, pz) || session.me.seatId >= 0) {
-      e.preventDefault();
-      toggleNearestSeat(session, false);
-      return;
-    }
+    if (handlePrimaryInteract()) e.preventDefault();
+    return;
   }
   if (e.code === "Space") {
-    if (session.me.mimicTrapped > 0) {
-      e.preventDefault();
-      session.room.send(FOREST_MSG.dungeonAction, { action: "struggle" });
-      return;
-    }
-    if (isInFootballStadium(session.me.position.x, session.me.position.z)) {
-      e.preventDefault();
-      session.room.send(FOOTBALL_MSG.kick, { power: 18 });
-      return;
-    }
-    if (
-      isInBrickDungeon(session.me.position.x, session.me.position.z) ||
-      isInForestWilderness(session.me.position.x, session.me.position.z)
-    ) {
-      e.preventDefault();
-      attackNearestAnimal(session);
-      return;
-    }
+    if (handlePrimaryAction()) e.preventDefault();
+    return;
   }
   if (e.code === "KeyG") {
     e.preventDefault();
