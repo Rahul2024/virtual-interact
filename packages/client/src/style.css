@@ -237,6 +237,26 @@ body {
   gap: 10px;
   align-items: center;
 }
+.hud-top-toggle {
+  display: none;
+}
+.hud-top-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.chat-toggle-btn {
+  display: none;
+}
+.chat-preview {
+  display: none;
+}
+.chat-header {
+  display: none;
+}
+.chat-send-btn {
+  display: none;
+}
 .hud-title {
   padding: 8px 12px;
   border: 1px solid var(--panel-border);
@@ -1753,12 +1773,65 @@ body {
   .hud-top {
     top: max(10px, env(safe-area-inset-top, 10px));
     left: max(10px, env(safe-area-inset-left, 10px));
-    gap: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    pointer-events: auto;
+    z-index: 10;
   }
-  .hud-title,
-  .hud-count {
-    padding: 6px 9px;
-    font-size: 12px;
+  .hud-top-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    font-size: 12.5px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  .hud-top-toggle:active {
+    border-color: var(--accent);
+  }
+  .hud-top-chevron {
+    font-size: 10px;
+    color: var(--muted);
+    transition: transform 0.2s ease;
+  }
+  .hud-top-toggle[aria-expanded="true"] .hud-top-chevron {
+    transform: rotate(180deg);
+  }
+  .hud-top-card {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 8px 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    background: rgba(14, 18, 26, 0.94);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  }
+  .hud-top-card.open {
+    display: flex;
+  }
+  .hud-top-card .hud-title {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 12.5px;
+  }
+  .hud-top-card .hud-count {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 11.5px;
   }
   .hud-right {
     top: max(48px, calc(env(safe-area-inset-top, 10px) + 38px));
@@ -1778,19 +1851,145 @@ body {
     white-space: nowrap;
     flex: none;
   }
-  .chat {
-    left: max(10px, env(safe-area-inset-left, 10px));
-    bottom: max(10px, env(safe-area-inset-bottom, 10px));
-    width: min(260px, calc(100vw - 96px));
+  /* Mobile Floating Chat Toggle Button */
+  .chat-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 12px));
+    bottom: max(12px, env(safe-area-inset-bottom, 12px));
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: rgba(16, 20, 30, 0.88);
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    pointer-events: auto;
+    z-index: 10;
   }
-  .chat-log {
-    max-height: 78px;
+  .chat-toggle-btn:active {
+    border-color: var(--accent);
+  }
+  .chat-unread-badge {
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+  .chat-unread-badge[hidden] {
+    display: none;
+  }
+  /* Mobile Transient Message Toast (shows at bottom when chat is closed) */
+  .chat-preview {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 12px));
+    bottom: max(50px, calc(env(safe-area-inset-bottom, 12px) + 42px));
+    max-width: min(280px, calc(100vw - 32px));
+    padding: 6px 12px;
+    border-radius: 10px;
+    background: rgba(12, 16, 24, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: var(--text);
     font-size: 12px;
-    padding: 6px 8px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    z-index: 9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
   }
-  .chat-form input {
+  .chat-preview.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .chat-preview .preview-who {
+    font-weight: 700;
+    margin-right: 4px;
+  }
+  /* Collapsed by default on mobile, opens when tapped */
+  .chat {
+    display: none;
+  }
+  .chat.mobile-open {
+    display: flex;
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    width: auto;
+    max-height: 48vh;
+    z-index: 30;
+    background: rgba(14, 18, 26, 0.96);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 10px 12px 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(14px);
+  }
+  .chat.mobile-open .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--panel-border);
+    margin-bottom: 6px;
+  }
+  .chat-header-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .chat-close-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-border);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+  }
+  .chat.mobile-open .chat-log {
+    max-height: 140px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .chat.mobile-open .chat-form {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .chat.mobile-open .chat-form input {
+    flex: 1;
     padding: 8px 10px;
     font-size: 13px;
+  }
+  .chat.mobile-open .chat-send-btn {
+    display: block;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .mobile-joystick-zone {
+    bottom: max(56px, calc(env(safe-area-inset-bottom, 12px) + 48px));
+    left: max(12px, env(safe-area-inset-left, 12px));
   }
   .activity-bar {
     left: 50%;

@@ -106,12 +106,26 @@ const MIC_NOTES: Partial<Record<MicUiStatus, string>> = {
 export class Hud {
   private root = el<HTMLDivElement>("hud");
   private count = el<HTMLSpanElement>("count");
+  private countPill = document.getElementById("count-pill") as HTMLSpanElement | null;
+  private topToggle = document.getElementById("hud-top-toggle") as HTMLButtonElement | null;
+  private topCard = document.getElementById("hud-top-card") as HTMLDivElement | null;
+
+  private chatWrap = document.getElementById("chat") ?? el<HTMLDivElement>("chat");
   private log = el<HTMLDivElement>("chat-log");
   private form = el<HTMLFormElement>("chat-form");
   private input = el<HTMLInputElement>("chat-input");
+  private chatToggleBtn = document.getElementById("chat-toggle-btn") as HTMLButtonElement | null;
+  private chatCloseBtn = document.getElementById("chat-close-btn") as HTMLButtonElement | null;
+  private chatPreview = document.getElementById("chat-preview") as HTMLDivElement | null;
+  private chatUnreadBadge = document.getElementById("chat-unread-badge") as HTMLSpanElement | null;
+
   private mic = el<HTMLButtonElement>("mic");
   private micLabel = el<HTMLSpanElement>("mic-label");
   private micNote = el<HTMLDivElement>("mic-note");
+
+  private chatOpenMobile = false;
+  private unreadCount = 0;
+  private previewTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Fires when the chat input gains or loses focus, so movement keys can be paused. */
   onFocusChange: (focused: boolean) => void = () => {};
@@ -125,21 +139,86 @@ export class Hud {
       const text = this.input.value.trim();
       this.input.value = "";
       if (text) this.onSend(text);
-      this.input.blur();
+      if (window.innerWidth <= 768) {
+        this.closeMobileChat();
+      } else {
+        this.input.blur();
+      }
     });
+
+    // Top-left compact info pill toggle on mobile
+    this.topToggle?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = this.topCard?.classList.toggle("open") ?? false;
+      this.topToggle?.setAttribute("aria-expanded", String(isOpen));
+    });
+
+    document.addEventListener("click", (e) => {
+      const target = e.target as Node;
+      if (this.topCard && !this.topCard.contains(target) && !this.topToggle?.contains(target)) {
+        this.topCard.classList.remove("open");
+        this.topToggle?.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // Mobile chat toggle and close buttons
+    this.chatToggleBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (this.chatOpenMobile) {
+        this.closeMobileChat();
+      } else {
+        this.openMobileChat();
+      }
+    });
+
+    this.chatCloseBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.closeMobileChat();
+    });
+
     this.input.addEventListener("focus", () => this.onFocusChange(true));
-    this.input.addEventListener("blur", () => this.onFocusChange(false));
+    this.input.addEventListener("blur", () => {
+      if (!this.chatOpenMobile) this.onFocusChange(false);
+    });
     this.input.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") this.input.blur();
+      if (e.key === "Escape") {
+        if (this.chatOpenMobile) this.closeMobileChat();
+        else this.input.blur();
+      }
       e.stopPropagation();
     });
+
     window.addEventListener("keydown", (e) => {
       if (this.root.hidden) return;
       if (e.key === "Enter" && document.activeElement !== this.input) {
         e.preventDefault();
-        this.input.focus();
+        if (window.innerWidth <= 768) {
+          this.openMobileChat();
+        } else {
+          this.input.focus();
+        }
       }
     });
+  }
+
+  openMobileChat() {
+    this.chatOpenMobile = true;
+    this.chatWrap.classList.add("mobile-open");
+    this.unreadCount = 0;
+    if (this.chatUnreadBadge) {
+      this.chatUnreadBadge.hidden = true;
+      this.chatUnreadBadge.textContent = "0";
+    }
+    if (this.chatPreview) this.chatPreview.hidden = true;
+    this.input.focus();
+    this.onFocusChange(true);
+  }
+
+  closeMobileChat() {
+    this.chatOpenMobile = false;
+    this.chatWrap.classList.remove("mobile-open");
+    this.input.blur();
+    this.onFocusChange(false);
   }
 
   show() {
@@ -148,10 +227,12 @@ export class Hud {
 
   hide() {
     this.root.hidden = true;
+    this.closeMobileChat();
   }
 
   setCount(n: number) {
     this.count.textContent = String(n);
+    if (this.countPill) this.countPill.textContent = String(n);
   }
 
   setMic(status: MicUiStatus, listeners = 0) {
@@ -177,6 +258,7 @@ export class Hud {
     body.textContent = text;
     line.append(who, body);
     this.push(line);
+    this.showPreview(name, text, color);
   }
 
   addSystem(text: string) {
@@ -184,6 +266,36 @@ export class Hud {
     line.className = "chat-line system";
     line.textContent = text;
     this.push(line);
+    this.showPreview("", text);
+  }
+
+  private showPreview(whoName: string, text: string, color?: string) {
+    if (window.innerWidth > 768 || this.chatOpenMobile || !this.chatPreview) return;
+    this.unreadCount++;
+    if (this.chatUnreadBadge) {
+      this.chatUnreadBadge.hidden = false;
+      this.chatUnreadBadge.textContent = String(this.unreadCount);
+    }
+    this.chatPreview.innerHTML = "";
+    if (whoName) {
+      const w = document.createElement("span");
+      w.className = "preview-who";
+      w.textContent = `${whoName}: `;
+      if (color) w.style.color = color;
+      this.chatPreview.appendChild(w);
+    }
+    const msg = document.createElement("span");
+    msg.className = "preview-msg";
+    msg.textContent = text;
+    this.chatPreview.appendChild(msg);
+
+    this.chatPreview.hidden = false;
+    this.chatPreview.classList.add("show");
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => {
+      this.chatPreview?.classList.remove("show");
+      if (this.chatPreview) this.chatPreview.hidden = true;
+    }, 4500);
   }
 
   private push(line: HTMLElement) {

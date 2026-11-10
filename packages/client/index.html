@@ -29,9 +29,16 @@
     </div>
 
     <div id="hud" hidden>
-      <div class="hud-top">
-        <div class="hud-title">Virtual Interact <span class="hud-zone">· Hub</span></div>
-        <div class="hud-count"><span id="count">1</span> here</div>
+      <div id="hud-top" class="hud-top">
+        <button id="hud-top-toggle" type="button" class="hud-top-toggle" aria-expanded="false" title="Room & player info">
+          <span class="hud-top-icon">👥</span>
+          <span id="count-pill">1</span>
+          <span class="hud-top-chevron">▾</span>
+        </button>
+        <div id="hud-top-card" class="hud-top-card">
+          <div class="hud-title">Virtual Interact <span class="hud-zone">· Hub</span></div>
+          <div class="hud-count"><span id="count">1</span> here</div>
+        </div>
       </div>
 
       <div class="hud-right">
@@ -132,10 +139,24 @@
         </div>
       </div>
 
-      <div class="chat">
+      <!-- Mobile Chat Preview Toast (appears briefly at bottom when message arrives and chat is closed) -->
+      <div id="chat-preview" class="chat-preview" hidden></div>
+
+      <!-- Mobile Floating Chat Toggle Button -->
+      <button id="chat-toggle-btn" type="button" class="chat-toggle-btn" aria-label="Open Chat" title="Open Chat">
+        💬 <span class="chat-toggle-text">Chat</span>
+        <span id="chat-unread-badge" class="chat-unread-badge" hidden>0</span>
+      </button>
+
+      <div id="chat" class="chat">
+        <div class="chat-header">
+          <span class="chat-header-title">💬 Chat</span>
+          <button id="chat-close-btn" type="button" class="chat-close-btn" aria-label="Close Chat">✕</button>
+        </div>
         <div id="chat-log" class="chat-log"></div>
         <form id="chat-form" class="chat-form" autocomplete="off">
           <input id="chat-input" type="text" maxlength="240" placeholder="Tap or press Enter to chat…" />
+          <button id="chat-send-btn" type="submit" class="chat-send-btn" aria-label="Send">➤</button>
         </form>
       </div>
     </div>
