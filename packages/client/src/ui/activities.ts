@@ -136,15 +136,19 @@ export class ActivitiesController {
 
   updateTimeButtonLabel() {
     const istStr = formatIndianTime();
-    if (this.currentMode === "ist") {
-      this.timeBtn.textContent = `🇮🇳 ${istStr}`;
-    } else if (this.currentMode === "night") {
-      this.timeBtn.textContent = `🌙 Night`;
+    let icon = "🇮🇳";
+    let text = istStr;
+    if (this.currentMode === "night") {
+      icon = "🌙";
+      text = "Night";
     } else if (this.currentMode === "sunset") {
-      this.timeBtn.textContent = `🌅 Sunset`;
-    } else {
-      this.timeBtn.textContent = `☀️ Day`;
+      icon = "🌅";
+      text = "Sunset";
+    } else if (this.currentMode === "day") {
+      icon = "☀️";
+      text = "Day";
     }
+    this.timeBtn.innerHTML = `<span class="hud-chip-icon">${icon}</span> <span class="hud-btn-label">${text}</span>`;
   }
 
   private buildMuralEditor() {

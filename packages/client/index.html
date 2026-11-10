@@ -47,21 +47,23 @@
 
       <div class="hud-right">
         <button id="fullscreen-btn" type="button" class="hud-button" title="Toggle Fullscreen">
-          <span id="fs-icon">⛶</span> <span class="fs-label">Full</span>
+          <span id="fs-icon">⛶</span> <span class="hud-btn-label fs-label">Full</span>
         </button>
         <button id="time-mode-btn" type="button" class="hud-button" title="Switch IST Auto / Night / Sunset / Day">
-          🇮🇳 IST
+          <span class="hud-chip-icon">🇮🇳</span> <span class="hud-btn-label">IST</span>
         </button>
         <button id="audio-btn" type="button" class="hud-button" title="Toggle Game Music & Sound Effects">
-          🔊 Sound: On
+          <span class="hud-chip-icon">🔊</span> <span class="hud-btn-label">Sound</span>
         </button>
-        <button id="mic" type="button" class="hud-button mic" data-status="off">
-          <span class="mic-dot"></span><span id="mic-label">Turn on mic</span>
+        <button id="mic" type="button" class="hud-button mic" data-status="off" title="Toggle Microphone">
+          <span class="mic-dot"></span><span class="hud-mobile-icon">🎙️</span><span id="mic-label" class="hud-btn-label">Turn on mic</span>
         </button>
-        <button id="friends-open" type="button" class="hud-button">
-          Friends <span id="friends-badge" class="pill-badge">0</span>
+        <button id="friends-open" type="button" class="hud-button" title="Friends">
+          <span class="hud-chip-icon">👥</span> <span class="hud-btn-label">Friends</span> <span id="friends-badge" class="pill-badge">0</span>
         </button>
-        <button id="ideas-open" type="button" class="hud-button">Idea Wall</button>
+        <button id="ideas-open" type="button" class="hud-button" title="Idea Wall">
+          <span class="hud-chip-icon">💡</span> <span class="hud-btn-label">Ideas</span>
+        </button>
       </div>
 
       <!-- Incoming Friend Request Toast -->

@@ -98,7 +98,9 @@ pokerPanel.onToggleVoice = (on) => pokerAudio.setVoice(on);
 const audioBtn = document.getElementById("audio-btn") as HTMLButtonElement | null;
 if (audioBtn) {
   const syncAudioBtn = () => {
-    audioBtn.textContent = gameAudio.enabled ? "🔊 Sound: On" : "🔇 Sound: Off";
+    const icon = gameAudio.enabled ? "🔊" : "🔇";
+    const label = gameAudio.enabled ? "Sound: On" : "Sound: Off";
+    audioBtn.innerHTML = `<span class="hud-chip-icon">${icon}</span> <span class="hud-btn-label">${label}</span>`;
     audioBtn.classList.toggle("muted", !gameAudio.enabled);
   };
   syncAudioBtn();

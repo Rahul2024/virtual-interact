@@ -6,6 +6,14 @@ function el<T extends HTMLElement>(id: string): T {
   return node as T;
 }
 
+export function isMobileUi(): boolean {
+  return (
+    window.innerWidth <= 820 ||
+    (window.innerHeight <= 540 && window.innerWidth <= 1024) ||
+    window.matchMedia("(pointer: coarse)").matches
+  );
+}
+
 /** The join screen: name + colour, then a promise that resolves when they click Enter. */
 export class JoinScreen {
   private root = el<HTMLDivElement>("join");
@@ -139,7 +147,7 @@ export class Hud {
       const text = this.input.value.trim();
       this.input.value = "";
       if (text) this.onSend(text);
-      if (window.innerWidth <= 768) {
+      if (isMobileUi()) {
         this.closeMobileChat();
       } else {
         this.input.blur();
@@ -176,6 +184,15 @@ export class Hud {
       this.closeMobileChat();
     });
 
+    // Tap outside to close open mobile chat
+    document.addEventListener("pointerdown", (e) => {
+      if (!this.chatOpenMobile) return;
+      const target = e.target as Node;
+      if (!this.chatWrap.contains(target) && !this.chatToggleBtn?.contains(target)) {
+        this.closeMobileChat();
+      }
+    });
+
     this.input.addEventListener("focus", () => this.onFocusChange(true));
     this.input.addEventListener("blur", () => {
       if (!this.chatOpenMobile) this.onFocusChange(false);
@@ -192,7 +209,7 @@ export class Hud {
       if (this.root.hidden) return;
       if (e.key === "Enter" && document.activeElement !== this.input) {
         e.preventDefault();
-        if (window.innerWidth <= 768) {
+        if (isMobileUi()) {
           this.openMobileChat();
         } else {
           this.input.focus();
@@ -270,7 +287,7 @@ export class Hud {
   }
 
   private showPreview(whoName: string, text: string, color?: string) {
-    if (window.innerWidth > 768 || this.chatOpenMobile || !this.chatPreview) return;
+    if (!isMobileUi() || this.chatOpenMobile || !this.chatPreview) return;
     this.unreadCount++;
     if (this.chatUnreadBadge) {
       this.chatUnreadBadge.hidden = false;

@@ -320,6 +320,16 @@ body {
   background: rgba(255, 255, 255, 0.12);
   font-size: 11px;
 }
+.hud-chip-icon {
+  display: inline-block;
+  line-height: 1;
+}
+.hud-mobile-icon {
+  display: none;
+}
+.hud-btn-label {
+  display: inline;
+}
 
 .mic-dot {
   display: inline-block;
@@ -1773,9 +1783,15 @@ body {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 820px), (max-height: 540px) and (orientation: landscape), (pointer: coarse) and (max-width: 1024px) {
+  .hud-btn-label {
+    display: none !important;
+  }
+  .hud-mobile-icon {
+    display: inline-block !important;
+  }
   .hud-top {
-    top: max(10px, env(safe-area-inset-top, 10px));
+    top: max(8px, env(safe-area-inset-top, 8px));
     left: max(10px, env(safe-area-inset-left, 10px));
     display: flex;
     flex-direction: column;
@@ -1786,15 +1802,15 @@ body {
   .hud-top-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 5px;
+    padding: 6px 10px;
     border: 1px solid var(--panel-border);
-    border-radius: var(--radius);
+    border-radius: 999px;
     background: var(--panel);
     color: var(--text);
     font: inherit;
     font-weight: 600;
-    font-size: 12.5px;
+    font-size: 12px;
     cursor: pointer;
     backdrop-filter: blur(8px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
@@ -1803,7 +1819,7 @@ body {
     border-color: var(--accent);
   }
   .hud-top-chevron {
-    font-size: 10px;
+    font-size: 9px;
     color: var(--muted);
     transition: transform 0.2s ease;
   }
@@ -1838,22 +1854,38 @@ body {
     font-size: 11.5px;
   }
   .hud-right {
-    top: max(48px, calc(env(safe-area-inset-top, 10px) + 38px));
-    left: max(10px, env(safe-area-inset-left, 10px));
+    top: max(8px, env(safe-area-inset-top, 8px));
     right: max(10px, env(safe-area-inset-right, 10px));
+    left: auto;
+    display: flex;
+    gap: 5px;
     overflow-x: auto;
-    padding-bottom: 4px;
-    gap: 6px;
+    padding-bottom: 2px;
     scrollbar-width: none;
+    z-index: 10;
   }
   .hud-right::-webkit-scrollbar {
     display: none;
   }
   .hud-button {
-    padding: 6px 10px;
-    font-size: 12px;
+    padding: 6px 9px;
+    font-size: 13px;
+    border-radius: 999px;
     white-space: nowrap;
     flex: none;
+    min-width: 32px;
+    height: 32px;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+  .hud-button.mic {
+    gap: 4px;
+    padding: 6px 8px;
+  }
+  .hud-button .pill-badge {
+    padding: 1px 5px;
+    font-size: 10px;
+    margin-left: 2px;
   }
   /* Mobile Floating Chat Toggle Button */
   .chat-toggle-btn {
@@ -1924,10 +1956,10 @@ body {
   }
   /* Collapsed by default on mobile, opens when tapped */
   .chat {
-    display: none;
+    display: none !important;
   }
   .chat.mobile-open {
-    display: flex;
+    display: flex !important;
     position: fixed;
     left: 10px;
     right: 10px;
@@ -2038,6 +2070,76 @@ body {
   .ideas-card {
     width: calc(100vw - 16px);
     max-height: 86vh;
+  }
+}
+
+/* Landscape-specific optimizations for phones & touch screens */
+@media ((orientation: landscape) and (max-height: 540px)), ((orientation: landscape) and (pointer: coarse)) {
+  .hud-top {
+    top: max(8px, env(safe-area-inset-top, 8px));
+    left: max(12px, env(safe-area-inset-left, 12px));
+  }
+  .hud-right {
+    top: max(8px, env(safe-area-inset-top, 8px));
+    right: max(12px, env(safe-area-inset-right, 12px));
+    left: auto;
+    gap: 6px;
+  }
+  .mobile-joystick-zone {
+    bottom: max(12px, env(safe-area-inset-bottom, 12px));
+    left: max(12px, env(safe-area-inset-left, 12px));
+    width: 110px;
+    height: 110px;
+  }
+  .mobile-joystick-base {
+    width: 96px;
+    height: 96px;
+  }
+  .mobile-joystick-stick {
+    width: 42px;
+    height: 42px;
+  }
+  .mobile-action-pad {
+    bottom: max(12px, env(safe-area-inset-bottom, 12px));
+    right: max(12px, env(safe-area-inset-right, 12px));
+    gap: 8px;
+  }
+  .mobile-act-btn {
+    width: 48px;
+    height: 48px;
+    font-size: 15px;
+  }
+  .mobile-act-btn span {
+    font-size: 9px;
+  }
+  /* In landscape, place floating chat button beside the joystick */
+  .chat-toggle-btn {
+    left: max(136px, calc(env(safe-area-inset-left, 12px) + 120px));
+    bottom: max(12px, env(safe-area-inset-bottom, 12px));
+  }
+  .chat-preview {
+    left: max(136px, calc(env(safe-area-inset-left, 12px) + 120px));
+    bottom: max(48px, calc(env(safe-area-inset-bottom, 12px) + 38px));
+    max-width: 340px;
+  }
+  /* In landscape, open chat on the left side, keeping right side of screen open */
+  .chat.mobile-open {
+    left: max(12px, env(safe-area-inset-left, 12px));
+    right: auto;
+    bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    width: min(340px, 45vw);
+    max-height: calc(100vh - 20px);
+  }
+  .chat.mobile-open .chat-log {
+    max-height: calc(100vh - 120px);
+  }
+  .cinema-dock {
+    bottom: max(14px, env(safe-area-inset-bottom, 14px));
+    max-width: calc(100vw - 320px);
+  }
+  .activity-bar {
+    bottom: max(14px, env(safe-area-inset-bottom, 14px));
+    max-width: calc(100vw - 320px);
   }
 }
 
