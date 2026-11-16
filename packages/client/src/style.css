@@ -58,7 +58,7 @@ body {
 }
 .cinema-embed-host.mode-minimized {
   z-index: 4;
-  pointer-events: auto;
+  pointer-events: none;
 }
 .cinema-embed-host.mode-expanded {
   z-index: 9;

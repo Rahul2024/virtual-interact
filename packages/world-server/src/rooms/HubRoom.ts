@@ -863,14 +863,14 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   override onDrop(client: Client, code?: number): void {
-    // Allow 30s to reconnect on unexpected network/mobile drops (not kicks/bans/replacements/idle).
+    // Allow 20s to reconnect on unexpected network/mobile drops (not kicks/bans/replacements/idle).
     if (
       code !== CLOSE.replaced &&
       code !== CLOSE.kicked &&
       code !== CLOSE.banned &&
       code !== CLOSE.idle
     ) {
-      this.allowReconnection(client, 30);
+      this.allowReconnection(client, 20);
     }
   }
 

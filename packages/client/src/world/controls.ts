@@ -44,6 +44,10 @@ export class Controls {
     });
 
     canvas.addEventListener("pointerdown", (e) => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+        active.blur();
+      }
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try {
         canvas.setPointerCapture(e.pointerId);

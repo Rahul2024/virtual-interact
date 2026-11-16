@@ -320,11 +320,20 @@ world.setScreenTexture(cinema.screenTexture);
 const ideaWall = new IdeaWall(world.scene, world.colliders, 12.5, -12.5);
 
 (document.getElementById("source-link") as HTMLAnchorElement).href = REPO_URL;
+let chatFocused = false;
+let ideasOpen = false;
+let cinemaModalOpen = false;
 const syncBlocked = () => {
-  controls.blocked = cinema.expanded || activities.isModalOpen;
+  controls.blocked = chatFocused || ideasOpen || cinemaModalOpen || cinema.expanded || activities.isModalOpen;
 };
-ideasPanel.onOpenChange = (open) => (controls.blocked = open || cinema.expanded || activities.isModalOpen);
-cinema.onModalOpenChange = (open) => (controls.blocked = open || activities.isModalOpen);
+ideasPanel.onOpenChange = (open) => {
+  ideasOpen = open;
+  syncBlocked();
+};
+cinema.onModalOpenChange = (open) => {
+  cinemaModalOpen = open;
+  syncBlocked();
+};
 activities.onOpenMuralChange = () => syncBlocked();
 activities.onTimeModeChange = (mode) => {
   world.timeMode = mode;
@@ -1019,8 +1028,13 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
 
     hud.onSend = (text) => room.send(MSG.chat, { text });
     adminPanel.attach(room);
-    const heartbeat = setInterval(() => room.send(MSG.heartbeat), PRESENCE.heartbeatMs);
-    hud.onFocusChange = (focused) => (controls.blocked = focused || cinema.expanded || activities.isModalOpen);
+    const heartbeat = setInterval(() => {
+      if (room.connection?.isOpen) room.send(MSG.heartbeat);
+    }, PRESENCE.heartbeatMs);
+    hud.onFocusChange = (focused) => {
+      chatFocused = focused;
+      syncBlocked();
+    };
 
     // Idea Wall
     ideasPanel.bind(myId, {
@@ -1071,19 +1085,29 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       resolve(reason);
     };
 
+    let reconnectingNoticed = false;
     room.onDrop(() => {
-      hud.addSystem("⚠️ Connection hiccup — reconnecting…");
+      if (!reconnectingNoticed) {
+        reconnectingNoticed = true;
+        hud.addSystem("⚠️ Connection hiccup — reconnecting…");
+      }
     });
     room.onReconnect(() => {
+      reconnectingNoticed = false;
       hud.addSystem("✅ Reconnected!");
       try {
-        room.send(MSG.heartbeat);
+        if (room.connection?.isOpen) room.send(MSG.heartbeat);
       } catch {
         /* ignore */
       }
     });
     room.onError((code, message) => {
       console.error("room error", code, message);
+      if (code === 524 || message?.includes("failed to reconnect")) {
+        room.reconnection.enabled = false;
+        void room.leave(false).catch(() => {});
+        return;
+      }
       hud.addSystem(`Connection problem: ${message ?? code}`);
     });
     room.onLeave((code) =>
@@ -1370,6 +1394,7 @@ function stepRemotes(s: Session, dt: number) {
 }
 
 function maybeSend(s: Session, dt: number) {
+  if (!s.room.connection?.isOpen) return;
   s.sendAccumulator += dt;
   if (s.sendAccumulator < 1 / NET.sendHz) return;
   s.sendAccumulator = 0;
