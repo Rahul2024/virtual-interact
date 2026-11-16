@@ -124,6 +124,7 @@ export class HubRoom extends Room<{ state: HubState }> {
   override maxClients = 100;
   override patchRate = NET.patchMs;
   override maxMessagesPerSecond = NET.maxMessagesPerSecond;
+  override seatReservationTimeout = 60;
   override autoDispose = true;
 
   override state = new HubState();
@@ -859,6 +860,29 @@ export class HubRoom extends Room<{ state: HubState }> {
     client.send(ARCADE_MSG.state, this.getArcadeState());
 
     console.log(`[hub] ${player.name} joined (${this.clients.length} in room)`);
+  }
+
+  override onDrop(client: Client, code?: number): void {
+    // Allow 30s to reconnect on unexpected network/mobile drops (not kicks/bans/replacements/idle).
+    if (
+      code !== CLOSE.replaced &&
+      code !== CLOSE.kicked &&
+      code !== CLOSE.banned &&
+      code !== CLOSE.idle
+    ) {
+      this.allowReconnection(client, 30);
+    }
+  }
+
+  override onReconnect(client: Client): void {
+    const sess = this.sessions.get(client.sessionId);
+    const now = Date.now();
+    if (sess) {
+      sess.lastSeenAt = now;
+      sess.lastMoveAt = now;
+    }
+    const player = this.state.players.get(client.sessionId);
+    console.log(`[hub] ${player?.name ?? client.sessionId} reconnected`);
   }
 
   override onLeave(client: Client): void {

@@ -320,8 +320,9 @@ interface AnimalMeshEntry {
 }
 
 export function createWorld(container: HTMLElement, labelContainer: HTMLElement): World {
+  const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -547,7 +548,8 @@ function addAtmosphereAndLights(scene: THREE.Scene) {
   const sun = new THREE.DirectionalLight("#fff4e0", 2.2);
   sun.position.set(55, 75, 35);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const shadowSize = window.matchMedia("(pointer: coarse)").matches ? 1024 : 2048;
+  sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 300;
   sun.shadow.camera.left = -150;

@@ -25,7 +25,12 @@ const health = createEndpoint("/health", { method: "GET" }, async () => {
 export function createWorldServer() {
   return defineServer({
     // Multi-peer WebRTC offers and ICE bursts can exceed 16 KB.
-    transport: new WebSocketTransport({ maxPayload: 64 * 1024 }),
+    // Longer ping tolerance (4 × 10s = 40s) prevents mobile & Render proxy blips from dropping players.
+    transport: new WebSocketTransport({
+      maxPayload: 64 * 1024,
+      pingInterval: 10_000,
+      pingMaxRetries: 4,
+    }),
     rooms: {
       [ROOMS.hub]: defineRoom(HubRoom),
       [POKER_ROOM]: defineRoom(PokerRoom),

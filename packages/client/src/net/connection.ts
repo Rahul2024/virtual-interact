@@ -38,6 +38,7 @@ export async function waitForServer(onStatus: (text: string) => void, maxMs = 90
   let attempt = 0;
   for (;;) {
     attempt++;
+    const reqStarted = Date.now();
     try {
       const res = await fetch(`${httpUrl()}/health`, {
         mode: "cors",
@@ -49,10 +50,13 @@ export async function waitForServer(onStatus: (text: string) => void, maxMs = 90
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
         if (body.ok) return;
       }
-    } catch {
-      // If a browser shield/extension (e.g. Brave Shields) blocks cross-origin /health polling
-      // while the server is actually awake, let joinHub() attempt the WebSocket connection after 2 tries.
-      if (attempt >= 2) return;
+    } catch (err) {
+      // If a browser shield/extension (e.g. Brave Shields) immediately blocks cross-origin /health
+      // (< 1.5s) while the server is actually awake, let joinHub() attempt WebSocket after 2 tries.
+      // Otherwise (e.g. timeout while Render is waking up), keep polling /health.
+      const isAbort = err instanceof DOMException && err.name === "TimeoutError";
+      const fastFail = Date.now() - reqStarted < 1500;
+      if (!isAbort && fastFail && attempt >= 2) return;
     }
     const waited = Math.round((Date.now() - started) / 1000);
     if (Date.now() - started > maxMs) return;

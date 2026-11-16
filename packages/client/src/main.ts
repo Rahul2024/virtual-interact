@@ -1042,7 +1042,19 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       })
       .catch((err) => console.warn("could not load ideas", err));
 
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        try {
+          room.send(MSG.heartbeat);
+        } catch {
+          /* ignore if reconnecting */
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     const end = (reason: string) => {
+      document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(heartbeat);
       adminPanel.detach();
       pokerPanel.detach();
@@ -1059,6 +1071,17 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       resolve(reason);
     };
 
+    room.onDrop(() => {
+      hud.addSystem("⚠️ Connection hiccup — reconnecting…");
+    });
+    room.onReconnect(() => {
+      hud.addSystem("✅ Reconnected!");
+      try {
+        room.send(MSG.heartbeat);
+      } catch {
+        /* ignore */
+      }
+    });
     room.onError((code, message) => {
       console.error("room error", code, message);
       hud.addSystem(`Connection problem: ${message ?? code}`);

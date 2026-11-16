@@ -46,6 +46,7 @@ const PACE = {
 export class PokerRoom extends Room<{ state: PokerTableState }> {
   override maxClients = 40; // players + railbirds
   override autoDispose = true;
+  override seatReservationTimeout = 60;
   override state = new PokerTableState();
 
   private hand: HandState | undefined;
@@ -81,6 +82,10 @@ export class PokerRoom extends Room<{ state: PokerTableState }> {
   override onJoin(client: Client): void {
     client.view = new StateView();
     if (!this.state.hostSessionId) this.state.hostSessionId = client.sessionId;
+  }
+
+  override onDrop(client: Client): void {
+    this.allowReconnection(client, 30);
   }
 
   override onLeave(client: Client): void {
