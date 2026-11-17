@@ -125,7 +125,7 @@ export class HubRoom extends Room<{ state: HubState }> {
   override patchRate = NET.patchMs;
   override maxMessagesPerSecond = NET.maxMessagesPerSecond;
   override seatReservationTimeout = 60;
-  override autoDispose = true;
+  override autoDispose = false;
 
   override state = new HubState();
 

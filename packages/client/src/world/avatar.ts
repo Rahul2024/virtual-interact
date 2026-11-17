@@ -47,6 +47,7 @@ export class Avatar {
   private nameEl: HTMLDivElement;
   private teamBadgeEl: HTMLSpanElement;
   private friendBadgeEl: HTMLSpanElement;
+  private addHintEl: HTMLSpanElement;
   private nameText!: HTMLSpanElement;
   private micEl!: HTMLSpanElement;
   private bubbleEl: HTMLDivElement;
@@ -175,7 +176,7 @@ export class Avatar {
     this.nameEl = document.createElement("div");
     this.nameEl.className = "label-name" + (isMe ? " me" : " clickable");
     if (!isMe) {
-      this.nameEl.title = "Click to Add Friend or interact";
+      this.nameEl.title = "Tap to Add Friend anywhere in the world";
       this.nameEl.addEventListener("click", (e) => {
         e.stopPropagation();
         this.onClick?.();
@@ -193,11 +194,18 @@ export class Avatar {
     this.nameText = document.createElement("span");
     this.nameText.textContent = name;
 
+    this.addHintEl = document.createElement("span");
+    this.addHintEl.className = "label-add-friend";
+    this.addHintEl.textContent = !isMe && !name.startsWith("🤖") ? " +" : "";
+    this.addHintEl.style.opacity = "0.8";
+    this.addHintEl.style.fontWeight = "700";
+    this.addHintEl.style.color = "#6fcf7a";
+
     this.micEl = document.createElement("span");
     this.micEl.className = "label-mic";
     this.micEl.title = "Microphone on";
 
-    this.nameEl.append(this.micEl, this.teamBadgeEl, this.friendBadgeEl, this.nameText);
+    this.nameEl.append(this.micEl, this.teamBadgeEl, this.friendBadgeEl, this.nameText, this.addHintEl);
     label.append(this.reactionEl, this.bubbleEl, this.nameEl);
 
     const labelObj = new CSS2DObject(label);
@@ -223,6 +231,7 @@ export class Avatar {
   setFriend(isFriend: boolean) {
     this.friendBadgeEl.classList.toggle("on", isFriend);
     this.nameEl.classList.toggle("friend", isFriend);
+    this.addHintEl.style.display = isFriend ? "none" : "inline";
   }
 
   setTeam(team: TeamId) {

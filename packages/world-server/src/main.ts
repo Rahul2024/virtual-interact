@@ -18,15 +18,32 @@ try {
   /* no .env: fine */
 }
 
+import { matchMaker } from "colyseus";
+import { ROOMS } from "@vi/shared";
 import { createWorldServer } from "./server.js";
 import { ideas, ideasReady } from "./ideas/index.js";
-import { emitWarning } from "node:process";
 
 const port = Number(process.env.PORT ?? 2567);
 
 await ideasReady;
 const server = createWorldServer();
 await server.listen(port);
+
+// Pre-create the persistent Hub room so the world & its NPCs stay live 24/7.
+try {
+  await matchMaker.createRoom(ROOMS.hub, {});
+  console.log("[world-server] persistent 24/7 Hub room initialized");
+} catch (err) {
+  console.warn("[world-server] could not pre-create hub room:", err);
+}
+
+// Self keep-alive ping every 5 minutes so free cloud hosts (e.g. Render) stay warm.
+const keepAliveUrl = process.env.RENDER_EXTERNAL_URL
+  ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "")}/health`
+  : `http://localhost:${port}/health`;
+setInterval(() => {
+  fetch(keepAliveUrl).catch(() => {});
+}, 5 * 60 * 1000);
 
 console.log(`[world-server] listening on ws://localhost:${port}`);
 console.log(`[world-server] moderator key ${process.env.ADMIN_KEY ? "set" : "NOT set (add ADMIN_KEY to packages/world-server/.env)"}`);

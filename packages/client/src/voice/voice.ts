@@ -22,6 +22,8 @@ export interface Locator {
    * Social Zone, or the peer is an accepted Friend).
    */
   canHearPeer(id: string): boolean;
+  /** True when this peer is an accepted Friend (voice stays connected at any distance). */
+  isFriend?(id: string): boolean;
 }
 
 interface Peer {
@@ -91,6 +93,10 @@ export class Voice {
     let n = 0;
     for (const id of this.peers.keys()) {
       if (!this.locator.canHearPeer(id)) continue;
+      if (this.locator.isFriend?.(id)) {
+        n++;
+        continue;
+      }
       const d = this.distanceTo(id);
       if (d !== undefined && d < VOICE.farRadius) n++;
     }
@@ -182,11 +188,12 @@ export class Voice {
     if (!this.isOn) return;
     for (const id of this.members) {
       const d = this.distanceTo(id);
+      const isFriend = Boolean(this.locator.isFriend?.(id));
       const peer = this.peers.get(id);
       const initiator = this.room.sessionId < id;
       if (!peer) {
-        if (initiator && d !== undefined && d < VOICE.connectRadius) void this.connect(id);
-      } else if (peer.initiator && d !== undefined && d > VOICE.connectRadius * 1.3) {
+        if (initiator && (isFriend || (d !== undefined && d < VOICE.connectRadius))) void this.connect(id);
+      } else if (peer.initiator && !isFriend && d !== undefined && d > VOICE.connectRadius * 1.3) {
         this.drop(id);
       }
     }
@@ -357,7 +364,16 @@ export class Voice {
       const dx = p.x - me.x;
       const dz = p.z - me.z;
       const d = Math.hypot(dx, dz);
-      const vol = d <= VOICE.nearRadius ? 1 : d >= VOICE.farRadius ? 0 : 1 - (d - VOICE.nearRadius) / (VOICE.farRadius - VOICE.nearRadius);
+      const isFriend = Boolean(this.locator.isFriend?.(id));
+      const vol = isFriend
+        ? d <= VOICE.nearRadius
+          ? 1
+          : Math.max(0.7, 1 - (d - VOICE.nearRadius) / 120)
+        : d <= VOICE.nearRadius
+          ? 1
+          : d >= VOICE.farRadius
+            ? 0
+            : 1 - (d - VOICE.nearRadius) / (VOICE.farRadius - VOICE.nearRadius);
       peer.gain.gain.setTargetAtTime(vol, t, 0.05);
       const pan = d > 0.5 ? (dx * -fz + dz * fx) / d : 0;
       peer.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);

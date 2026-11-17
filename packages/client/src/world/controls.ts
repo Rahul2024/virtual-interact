@@ -6,7 +6,7 @@ import { CINEMA_HALL } from "@vi/shared";
  * - Desktop: WASD / Arrow keys + mouse drag-to-orbit + scroll wheel zoom.
  * - Mobile / Touch: Virtual thumb joystick vector + single-finger drag-to-orbit
  *   + two-finger pinch-to-zoom (supports simultaneous left-thumb joystick and right-thumb camera look).
- * - Also supports Cinema Seated View and Poker Table Seated View.
+ * - Also supports Cinema Seated View, Poker Table Seated View, and Underground Dungeon Depths.
  */
 export class Controls {
   private keys = new Set<string>();
@@ -198,8 +198,6 @@ export class Controls {
       const z = target.z + Math.cos(this.yaw) * cp * this.distance;
       const y = target.y + 0.15 + Math.sin(this.pitch) * this.distance;
       camera.position.set(x, y, z);
-      // Look a little past the player, at the felt in front of them.
-      // Aim between your cards and the middle of the table so the board is always in view.
       camera.lookAt(target.x - Math.sin(this.yaw) * 2.2, target.y - 0.75, target.z - Math.cos(this.yaw) * 2.2);
       return;
     }
@@ -222,7 +220,7 @@ export class Controls {
     const cp = Math.cos(this.pitch);
     const x = target.x + Math.sin(this.yaw) * cp * this.distance;
     const z = target.z + Math.cos(this.yaw) * cp * this.distance;
-    const y = Math.max(0.6, target.y + Math.sin(this.pitch) * this.distance);
+    const y = Math.max(target.y - 0.9, target.y + Math.sin(this.pitch) * this.distance);
     camera.position.set(x, y, z);
     camera.lookAt(target);
   }

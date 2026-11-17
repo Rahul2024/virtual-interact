@@ -7,8 +7,8 @@ export const REPO_URL = "https://github.com/Rahul2024/virtual-interact";
 
 /**
  * Expanded World: 1040m × 1040m (-520 to +520 on X and Z) to fit all city
- * districts, the Deep Southern Forest, and the 360m-long 4-Floor Ascending
- * Frieren-Style Stone-Brick Hallway Dungeon (`z = +120..+480`).
+ * districts, the Deep Southern Forest, the Haunted Castle Gatehouse, and the
+ * 360m-long 4-Depth Descending Underground Dungeon (`z = +120..+480`, `y = 0m..-18m`).
  */
 export const WORLD = {
   size: 1040,
@@ -276,32 +276,31 @@ export function isInForestWilderness(x: number, z: number): boolean {
 }
 
 /**
- * 360m-Long 4-Floor Ascending Frieren-Style Stone-Brick Hallway Dungeon
- * ("The Spire of the 3-Faced Dire Wolf" at `x = -24..+24, z = +120..+480`):
+ * 360m-Long 4-Depth Descending Underground Dungeon ("The Abyssal Catacombs of the 3-Faced Dire Wolf"
+ * at `x = -24..+24, z = +120..+480`, concealed beneath a compact Haunted Castle Gatehouse on the surface):
  *
- * - FLOOR 1 (`z = 120..210`, `y = 0m` — ❄️ ICE HEAD THEME: Frost-Fang Aqueduct Hallway):
- *   - Flooded freezing underground canal (`z = 132..172`) with 10 slippery ice stepping-stones,
- *     waterfalls pouring from wall grates & dripping ceiling icicles (`z = 138, 152, 166`),
+ * - DEPTH 1 (`z = 120..210`, `y = 0m` — ❄️ ICE HEAD THEME: Crypt Vestibule, Sunken Aqueduct Rotunda & Mimic Reliquary):
+ *   - Narrow Crypt Entry Vestibule (`z = 120..132`) opening into the Grand Sunken Aqueduct Rotunda (`z = 132..172`)
+ *     with 10 slippery ice stepping-stones, waterfalls pouring from wall grates & dripping ceiling icicles (`z = 138, 152, 166`),
  *     plus branching West & East outer brick walkways (`x = ±14`).
- *   - Cracked frost-slab booby traps (`z = 126..182`) & sweeping Frost-Arrow Volleys.
- *   - Shifting Brick T-Junction Levers (`z = 186`) & 3-Chest Frost Mimic Alcove (`z = 192..208`)
+ *   - Narrow Trap Gauntlet (`z = 172..188`) with cracked frost-slab booby traps (`z = 126..182`) & sweeping Frost-Arrow Volleys.
+ *   - Shifting Brick T-Junction Levers (`z = 186`), Vaulted 3-Chest Frost Mimic Reliquary with West/East Side Treasure Alcoves (`z = 190..210`)
  *     + Secret Brick Bookcase Wall at `z = 210`.
- * - STAIRCASE 1→2 (`z = 210..226`): Grand Stone-Brick Stairway climbing `y = 0m -> +6.0m`.
- * - FLOOR 2 (`z = 226..316`, `y = +6.0m` — 🔥 FIRE HEAD THEME: Crimson-Ember & Spider-Web Hallway):
- *   - Long elevated stone-brick hallway flanked by glowing magma channels & branching West/East galleries.
- *   - Sticky Cinder-Spider Web Nets (`z = 238, 256, 274`) that slow movement until burned with a 🔥 Torch
+ * - DESCENDING STAIRWELL 1→2 (`z = 210..226`): Steep subterranean stairwell descending `y = 0m -> -6.0m`.
+ * - DEPTH 2 (`z = 226..316`, `y = -6.0m` — 🔥 FIRE HEAD THEME: Cinder-Web Tunnels & Molten Forge Rotunda):
+ *   - Cramped Cinder-Web Tunnels (`z = 226..258`) with sticky Spider-Web Curtains (`z = 238, 256, 274`) burnable with a 🔥 Torch
  *     + 4 Giant Ceiling Spiders (`spider-1..4`) dropping on silk threads.
- *   - Timed Flame-Jet Wall Vents, Swinging Molten Pendulum Blades (`z = 262, 278, 294`), and
- *     Rolling Fire-Boulders (`fireBoulderZ` in `282..314`).
- * - STAIRCASE 2→3 (`z = 316..332`): Ascending Stone-Brick Stairway climbing `y = +6.0m -> +12.0m`.
- * - FLOOR 3 (`z = 332..404`, `y = +12.0m` — 🌑 SHADOW HEAD THEME: Shadow-Mana Chasm & Wolf Den):
- *   - Long vaulted purple-slate brick hallway with 3 branching paths over a bottomless abyss (`z = 340..368`),
- *     Parallel Iron-Bar Corridors with Loose Brick Portcullis Switches (`z = 372..392`, Gate at `z = 388`),
- *     and 4 prowling Small Shadow Wolves (`shadow-wolf-1..4`) that howl and ambush players on the approach!
- * - STAIRCASE 3→4 (`z = 404..420`): Grand Sanctum Stairway climbing `y = +12.0m -> +18.0m`.
- * - FLOOR 4 (`z = 420..480`, `y = +18.0m` — 👑 BOSS SANCTUM: Colossal Hall of the 3-Faced Dire Wolf):
- *   - 44m-wide vaulted stone-brick boss arena where Cerberus, the 3-Faced Dire Wolf (`boss-cerberus`, 30 HP)
- *     guards the Golden Royal Vault (`z = 470`) and the Waterfall Return Slide (`z = 476`).
+ *   - Colossal Subterranean Molten Forge Rotunda (`z = 258..296`) with obsidian anvil columns, magma channels,
+ *     Swinging Molten Pendulum Blades (`z = 262, 278, 294`), and Narrow Boulder Chute (`fireBoulderZ` in `280..314`).
+ * - DESCENDING STAIRWELL 2→3 (`z = 316..332`): Subterranean stairwell descending `y = -6.0m -> -12.0m`.
+ * - DEPTH 3 (`z = 332..404`, `y = -12.0m` — 🌑 SHADOW HEAD THEME: Abyssal Shadow Chasm & Twin Iron Gaol):
+ *   - Vast Underground Chasm Cavern (`z = 332..370`) with 3 branching paths over a glowing purple crystal abyss,
+ *     followed by Cramped Twin Iron-Bar Gaol Cells (`z = 370..404`) with Loose Brick Portcullis Switches (`z = 382`, Gate at `z = 388`)
+ *     and 4 prowling Small Shadow Wolves (`shadow-wolf-1..4`).
+ * - DESCENDING STAIRWELL 3→4 (`z = 404..420`): Deepest sanctum stairwell descending `y = -12.0m -> -18.0m`.
+ * - DEPTH 4 (`z = 420..480`, `y = -18.0m` — 👑 BOSS SANCTUM: Subterranean Cathedral of the 3-Faced Dire Wolf):
+ *   - Narrow Ritual Antechamber (`z = 420..432`) opening into the 44m-wide vaulted Underground Cathedral where Cerberus,
+ *     the 3-Faced Dire Wolf (`boss-cerberus`, 30 HP) guards the Golden Royal Vault (`z = 470`) and the Abyssal Geyser Portal (`z = 476`).
  */
 export const BRICK_DUNGEON = {
   centerX: 0,
@@ -310,7 +309,7 @@ export const BRICK_DUNGEON = {
   halfW: 19.0,
   bossHalfW: 22.0,
 
-  // Floor 1: Ice Hallway (z = 120..210, y = 0)
+  // Depth 1: Ice Crypts & Aqueduct Rotunda (z = 120..210, y = 0)
   waterStartZ: 132,
   waterEndZ: 172,
   hall1EndZ: 184,
@@ -319,12 +318,12 @@ export const BRICK_DUNGEON = {
   mimicRoomEndZ: 210,
   secretWallZ: 210,
 
-  // Staircase 1->2 (z = 210..226, y = 0..6)
+  // Descending Stairwell 1->2 (z = 210..226, y = 0..-6)
   stairs1StartZ: 210,
   stairs1EndZ: 226,
-  floor2Y: 6.0,
+  floor2Y: -6.0,
 
-  // Floor 2: Fire & Spider-Web Hallway (z = 226..316, y = 6)
+  // Depth 2: Fire & Spider-Web Catacombs (z = 226..316, y = -6)
   web1Z: 238,
   web2Z: 256,
   web3Z: 274,
@@ -335,12 +334,12 @@ export const BRICK_DUNGEON = {
   boulderEndZ: 314,
   floor2EndZ: 316,
 
-  // Staircase 2->3 (z = 316..332, y = 6..12)
+  // Descending Stairwell 2->3 (z = 316..332, y = -6..-12)
   stairs2StartZ: 316,
   stairs2EndZ: 332,
-  floor3Y: 12.0,
+  floor3Y: -12.0,
 
-  // Floor 3: Shadow Chasm & Wolf Den Hallway (z = 332..404, y = 12)
+  // Depth 3: Shadow Chasm & Twin Iron Gaol (z = 332..404, y = -12)
   chasmStartZ: 340,
   chasmEndZ: 368,
   parallelStartZ: 372,
@@ -348,12 +347,12 @@ export const BRICK_DUNGEON = {
   gateZ: 388,
   floor3EndZ: 404,
 
-  // Staircase 3->4 (z = 404..420, y = 12..18)
+  // Descending Stairwell 3->4 (z = 404..420, y = -12..-18)
   stairs3StartZ: 404,
   stairs3EndZ: 420,
-  floor4Y: 18.0,
+  floor4Y: -18.0,
 
-  // Floor 4: Colossal Boss Sanctum (z = 420..480, y = 18)
+  // Depth 4: Colossal Subterranean Boss Cathedral (z = 420..480, y = -18)
   sanctumStartZ: 420,
   bossHomeZ: 446,
   vaultChestZ: 470,
@@ -362,7 +361,7 @@ export const BRICK_DUNGEON = {
   // ---- Hazard geometry. The ONLY place these numbers live: the server
   // checks them, the client draws them and builds colliders from them. ----
 
-  // Floor 1
+  // Depth 1
   /** Cracked-slab rows; one slab per row is cracked (which one depends on dungeonSeed). */
   slabRowZs: [126, 175, 181],
   slabCenterX: 2.6,
@@ -390,14 +389,14 @@ export const BRICK_DUNGEON = {
   /** Secret bookcase wall spans the full hallway width until the grimoire is found. */
   secretWallHalfD: 0.6,
 
-  // Floor 2
+  // Depth 2
   /** Web curtains block the centre; the galleries at |x| ≥ webHalfW stay open. */
   webHalfW: 8.5,
   webHalfD: 0.35,
   boulderRadius: 2.6,
   boulderHitHalfW: 3.0,
 
-  // Floor 3
+  // Depth 3
   /** Chasm: safe on the bridge (|x| ≤ bridgeHalfW) or catwalks (|x| ≥ catwalkMinX). */
   chasmBridgeHalfW: 3.2,
   chasmCatwalkMinX: 11.0,
@@ -438,7 +437,7 @@ export function dungeonClosedDoors(state: DungeonDoorState): WallBox[] {
   const cx = D.centerX;
   const doors: WallBox[] = [];
 
-  // Floor 1 shifting partition: wing 1 = west open (east wall closed), wing 2 = east open.
+  // Depth 1 shifting partition: wing 1 = west open (east wall closed), wing 2 = east open.
   const closedSide = state.dungeonWing === 1 ? 1 : -1;
   const pHalf = (D.partitionOuterX - D.partitionInnerX) / 2;
   doors.push({
@@ -449,12 +448,12 @@ export function dungeonClosedDoors(state: DungeonDoorState): WallBox[] {
     door: "partition",
   });
 
-  // Floor 1 secret bookcase across the whole hallway until the grimoire is found.
+  // Depth 1 secret bookcase across the whole hallway until the grimoire is found.
   if (state.grimoireFound === 0) {
     doors.push({ x: cx, z: D.secretWallZ, hw: D.halfW, hd: D.secretWallHalfD, door: "bookcase" });
   }
 
-  // Floor 2 web curtains in the centre lane.
+  // Depth 2 web curtains in the centre lane.
   const webZs = [D.web1Z, D.web2Z, D.web3Z] as const;
   webZs.forEach((wz, i) => {
     if ((state.websBurned & (1 << i)) === 0) {
@@ -462,7 +461,7 @@ export function dungeonClosedDoors(state: DungeonDoorState): WallBox[] {
     }
   });
 
-  // Floor 3 portcullis gates, one per side of the iron bars.
+  // Depth 3 portcullis gates, one per side of the iron bars.
   const gHalf = (D.halfW - D.gateInnerX) / 2;
   if (state.gateLeftOpen === 0) {
     doors.push({ x: cx - (D.gateInnerX + gHalf), z: D.gateZ, hw: gHalf, hd: D.gateHalfD, door: "gateLeft" });
@@ -499,8 +498,8 @@ export function isInBrickDungeon(x: number, z: number): boolean {
 
 /**
  * Returns the vertical floor elevation `y` (in metres) at `(x, z)` along the
- * 360m-long 4-Floor Ascending Stone-Brick Dungeon so avatars, enemies, and
- * cameras smoothly climb the staircases from `y = 0m` up to `y = +18m`!
+ * 360m-long 4-Depth Descending Underground Dungeon so avatars, enemies, and
+ * cameras smoothly descend the subterranean stairwells from `y = 0m` down to `y = -18m`!
  */
 export function getDungeonFloorY(x: number, z: number): number {
   if (!isInBrickDungeon(x, z) || z <= BRICK_DUNGEON.stairs1StartZ) return 0;
@@ -700,7 +699,7 @@ export interface ArcadeStateBroadcast {
   triviaScores: Record<string, number>;
 }
 
-// ---- South Campfire, Forest Hunting & 4-Floor Brick Dungeon Messages -------
+// ---- South Campfire, Forest Hunting & 4-Depth Underground Dungeon Messages -------
 
 export const FOREST_MSG = {
   equipTool: "forest:tool",

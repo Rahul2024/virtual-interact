@@ -18,6 +18,7 @@ import {
   PLAYER,
   REPO_URL,
   TEAM,
+  TOOL,
   getCinemaFloorY,
   getDungeonFloorNumber,
   getDungeonFloorY,
@@ -84,6 +85,122 @@ const cinema = new CinemaController();
 const activities = new ActivitiesController(world.muralCanvas);
 const pokerPanel = new PokerPanel();
 const adminPanel = new AdminPanel();
+
+// ---- 24/7 Living World Town NPCs (Time-Synced Patrols & Interactive Lore) ----
+interface WorldNpc {
+  avatar: Avatar;
+  lines: string[];
+  lineIdx: number;
+  lastSpokeAt: number;
+  sample(tSec: number): { x: number; z: number; rot: number; anim: Anim };
+}
+
+const worldNpcs: WorldNpc[] = (() => {
+  // 1. Aria — Central Fountain & Plaza Guide
+  const aria = new Avatar("🤖 Aria · Guide", "#4fc3d9");
+  aria.onClick = () => {
+    aria.react("👋");
+    aria.say("Tip: Tap any player's name or use the + Add Friend button anywhere in the world!", 6500);
+    hud.addChat("🤖 Aria · Guide", "Tap any player's name or use the + Add Friend button anywhere in the world!", "#4fc3d9");
+  };
+  world.scene.add(aria.group);
+
+  // 2. Kabir — North Cinema & Arcade Enthusiast
+  const kabir = new Avatar("🤖 Kabir · Cinephile", "#f2a33a");
+  kabir.onClick = () => {
+    kabir.react("🍿");
+    kabir.say("Movies in the North Cinema Hall, or Texas Hold'em Poker in the East Royal Hall!", 6500);
+    hud.addChat("🤖 Kabir · Cinephile", "Climb the red-carpet stairs for the Cinema Hall, or head East for Texas Hold'em!", "#f2a33a");
+  };
+  world.scene.add(kabir.group);
+
+  // 3. Viktor — South Forest & Haunted Castle Gate Warden (holds a glowing Torch!)
+  const viktor = new Avatar("🤖 Viktor · Warden", "#a66ce8");
+  viktor.setTool(TOOL.torch);
+  viktor.onClick = () => {
+    viktor.react("🕯️");
+    viktor.say("Beyond the Haunted Castle Door lies a 4-floor underground abyss (-18m deep)!", 6500);
+    hud.addChat("🤖 Viktor · Warden", "Equip a Torch before stepping through the Ominous Haunted Castle Door!", "#a66ce8");
+  };
+  world.scene.add(viktor.group);
+
+  return [
+    {
+      avatar: aria,
+      lines: [
+        "Welcome! You can send Friend Requests anywhere in the world—even outside the circle!",
+        "Accepted Friends ★ can hear each other on voice chat across the entire map!",
+        "Click any player's nameplate or tap '+ Add Friend' when standing nearby!",
+      ],
+      lineIdx: 0,
+      lastSpokeAt: 0,
+      sample(tSec: number) {
+        const cycle = tSec * 0.22;
+        const paused = Math.sin(tSec * 0.7) > 0.65;
+        const a = paused ? Math.floor(cycle) : cycle;
+        const r = 9.2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        const rot = Math.atan2(-Math.sin(a), Math.cos(a));
+        return { x, z, rot, anim: paused ? ANIM.wave : ANIM.walk };
+      },
+    },
+    {
+      avatar: kabir,
+      lines: [
+        "Heading to the Grand Cinema Hall? Press G inside to sit right next to your Friends!",
+        "The server stays live 24/7—come hang out in the Cinema or Arcade anytime!",
+        "Try the Open-Mic Stage or paint on the shared Pixel Graffiti Mural!",
+      ],
+      lineIdx: 0,
+      lastSpokeAt: 4000,
+      sample(tSec: number) {
+        const s = Math.sin(tSec * 0.18);
+        const c = Math.cos(tSec * 0.18);
+        const x = s * 14;
+        const z = -17 + Math.cos(tSec * 0.36) * 3.5;
+        const rot = Math.atan2(c * 14 * 0.18, -Math.sin(tSec * 0.36) * 3.5 * 0.36);
+        return { x, z, rot, anim: Math.abs(c) < 0.18 ? ANIM.cheer : ANIM.walk };
+      },
+    },
+    {
+      avatar: viktor,
+      lines: [
+        "Beware the Ominous Haunted Door… the castle looks small, but the catacombs plunge 18m underground!",
+        "Depth 1 has a sunken ice rotunda & Mimic reliquary; Depth 2 hides a molten forge!",
+        "Grab a 🔥 Torch at the Campfire to burn the Cinder-Spider webs on Depth 2!",
+      ],
+      lineIdx: 0,
+      lastSpokeAt: 8000,
+      sample(tSec: number) {
+        const u = Math.sin(tSec * 0.16);
+        const x = Math.sin(tSec * 0.32) * 4.2;
+        const z = 96 + u * 16;
+        const rot = u >= 0 ? 0 : Math.PI;
+        return { x, z, rot, anim: Math.abs(Math.cos(tSec * 0.16)) < 0.15 ? ANIM.idle : ANIM.walk };
+      },
+    },
+  ];
+})();
+
+function stepWorldNpcs(dt: number, nowMs: number) {
+  const tSec = nowMs / 1000;
+  for (const npc of worldNpcs) {
+    const pose = npc.sample(tSec);
+    npc.avatar.position.set(pose.x, getWorldFloorY(pose.x, pose.z), pose.z);
+    npc.avatar.rot = pose.rot;
+    npc.avatar.anim = pose.anim;
+    npc.avatar.update(dt);
+
+    if (nowMs - npc.lastSpokeAt > 19_000) {
+      npc.lastSpokeAt = nowMs + Math.random() * 4000;
+      const line = npc.lines[npc.lineIdx % npc.lines.length]!;
+      npc.lineIdx++;
+      npc.avatar.say(line, 6500);
+    }
+  }
+}
+
 window.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.shiftKey && e.code === "KeyA" && session) {
     e.preventDefault();
@@ -196,7 +313,6 @@ pokerPanel.onTableEvent = (e) => {
       who?.say(e.allIn ? `${line}. All in!` : line, 3500);
       if (e.action === "fold") pokerAudio.cardSlide();
       else if (e.action !== "check") pokerAudio.chips(Math.min(6, Math.max(1, Math.round((e.amount ?? 0) / 25))));
-      // The dealer repeats the action aloud, as at a live table.
       if (e.text) pokerAudio.say(e.text);
       break;
     }
@@ -293,7 +409,6 @@ function pokerSnapshot(): PokerTableSnapshot | undefined {
       lastAction: seat.lastAction,
     };
   });
-  // Pot chips: the collected pot shown as clean stacks (per-street bets stay in front of players).
   const pots = (() => {
     try {
       return JSON.parse(st.pots) as Array<{ amount: number }>;
@@ -550,7 +665,7 @@ function triggerNearestBrickDungeonAction(s: Session, px: number, pz: number) {
       s.room.send(FOREST_MSG.dungeonAction, { action });
     } else {
       const chest = chestAt(px, pz);
-      if (chest === 0) return; // not standing at a chest
+      if (chest === 0) return;
       const action: DungeonActionType = chest === 1 ? "chest1" : chest === 2 ? "chest2" : "chest3";
       s.room.send(FOREST_MSG.dungeonAction, { action });
     }
@@ -656,7 +771,6 @@ function toggleNearestSeat(s: Session, campfireMode: boolean) {
     return;
   }
   const occupied = getOccupiedSeats(s);
-  // Campfire logs are row 10; cinema rows are 0..5; poker seats (row 20) have their own flow.
   const pool = CINEMA_SEATS.filter((seat) => (campfireMode ? seat.row === 10 : seat.row < 10) && !occupied.has(seat.id));
   if (pool.length === 0) {
     hud.addSystem("All seats here are currently taken!");
@@ -694,7 +808,6 @@ function sitBesideFriends(s: Session) {
     sitInSeat(s, best.id);
     hud.addSystem(`Seated in Seat #${best.id + 1} right beside your friend!`);
   } else {
-    // Pick center seat in middle tier (e.g. tier 3 / row 2)
     const centerSeat = available.find((seat) => seat.row === 3 && (seat.col === 4 || seat.col === 5)) ?? available[0]!;
     sitInSeat(s, centerSeat.id);
     hud.addSystem(`Seated in Cinema Seat #${centerSeat.id + 1}.`);
@@ -755,6 +868,11 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     controls.yaw = Math.PI;
     world.scene.add(me.group);
 
+    const isPeerFriend = (peerSessionId: string): boolean => {
+      const remote = remotes.get(peerSessionId);
+      return remote ? friends.has(remote.clientId) : false;
+    };
+
     const canHearPeer = (peerSessionId: string): boolean => {
       const remote = remotes.get(peerSessionId);
       if (!remote) return false;
@@ -782,6 +900,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       listenerYaw: () => controls.yaw,
       peerPosition: (id) => remotes.get(id)?.avatar.position,
       canHearPeer,
+      isFriend: isPeerFriend,
     });
     voice.onStatus = (status) => {
       hud.setMic(status, voice.listeners);
@@ -843,6 +962,7 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     activities.onEatMeat = () => room.send(FOREST_MSG.eatMeat);
     activities.onSitCampfire = () => toggleNearestSeat(s, true);
     activities.onDungeonAction = (action) => room.send(FOREST_MSG.dungeonAction, { action });
+    activities.onSendFriendRequest = (toSessionId) => room.send(FRIEND_MSG.request, { toSessionId });
 
     const syncCinemaFromRoom = () => {
       const st = room.state;
@@ -1132,7 +1252,9 @@ function frame(now: number) {
   last = now;
 
   try {
+    const wallNowMs = Date.now();
     world.updateAtmosphere(now);
+    stepWorldNpcs(dt, wallNowMs);
     cinema.updateFrame(now);
 
     if (session) {
@@ -1180,8 +1302,6 @@ function frame(now: number) {
         );
       }
       if (st) {
-        // Closed doors are solid on the client, so you stop at them instead of
-        // walking through and being teleported back by the server.
         world.colliders.dynamic = dungeonClosedDoors({
           dungeonWing: st.dungeonWing ?? 1,
           grimoireFound: st.grimoireFound ?? 0,
@@ -1200,7 +1320,7 @@ function frame(now: number) {
           fireBoulderZ: st.fireBoulderZ ?? BRICK_DUNGEON.boulderEndZ,
           websBurned: st.websBurned ?? 0,
           chompingChests,
-          nowMs: Date.now(),
+          nowMs: wallNowMs,
         });
       }
       let bossHp = 30;
@@ -1236,18 +1356,26 @@ function frame(now: number) {
       const inCinema = isInCinemaHall(mx, mz) || isCinemaSeated;
 
       const peerList: CinemaFriendPeer[] = [];
+      let closestStranger: { sessionId: string; name: string; dist: number } | undefined;
+
       for (const [sid, r] of session.remotes.entries()) {
+        const isFriend = session.friends.has(r.clientId);
+        const name = roomPlayerName(session, sid);
+        const distance = Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz);
         peerList.push({
           sessionId: sid,
           clientId: r.clientId,
-          name: roomPlayerName(session, sid),
+          name,
           color: r.color,
-          isFriend: session.friends.has(r.clientId),
+          isFriend,
           inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < CINEMA_HALL.seatCount),
           seatId: r.avatar.seatId,
           speaking: r.speaking,
-          distance: Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz),
+          distance,
         });
+        if (!isFriend && distance <= 12.0 && (!closestStranger || distance < closestStranger.dist)) {
+          closestStranger = { sessionId: sid, name, dist: distance };
+        }
       }
 
       cinema.updateHudState({
@@ -1283,6 +1411,7 @@ function frame(now: number) {
         mimicTrapped: session.me.mimicTrapped,
         anyPeerMimicTrapped,
         isNight: world.isNight,
+        nearbyStranger: closestStranger ? { sessionId: closestStranger.sessionId, name: closestStranger.name } : undefined,
       });
 
       if (session.voice.status === "on" && now - lastMicLabel > 600) {
@@ -1343,7 +1472,6 @@ function stepLocal(s: Session, dt: number, now: number) {
 
   if (s.me.seatId >= 0) {
     if (moving && pokerSeatIndexOf(s.me.seatId) >= 0) {
-      // Standing up from the poker table leaves the game properly (folds if needed).
       pokerPanel.detach();
       return;
     }
@@ -1382,6 +1510,7 @@ function stepLocal(s: Session, dt: number, now: number) {
 
 function stepRemotes(s: Session, dt: number) {
   const k = 1 - Math.exp(-dt * 12);
+  const myInDungeon = isInBrickDungeon(s.me.position.x, s.me.position.z);
   for (const r of s.remotes.values()) {
     const p = r.avatar.position;
     p.x += (r.target.x - p.x) * k;
@@ -1389,6 +1518,9 @@ function stepRemotes(s: Session, dt: number) {
     const remoteSeat = r.avatar.seatId >= 0 ? CINEMA_SEATS[r.avatar.seatId] : undefined;
     p.y = remoteSeat ? (remoteSeat.y ?? 0) : getWorldFloorY(p.x, p.z);
     r.avatar.rot = lerpAngle(r.avatar.rot, r.target.rot, k);
+    // Hide players who are deep inside the underground dungeon when you are outside on the surface!
+    const peerInDungeon = isInBrickDungeon(p.x, p.z);
+    r.avatar.group.visible = !peerInDungeon || myInDungeon;
     r.avatar.update(dt);
   }
 }

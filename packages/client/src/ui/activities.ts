@@ -45,8 +45,8 @@ const TRIVIA_QUESTIONS: Array<{ q: string; options: [string, string, string, str
     answerIdx: 0,
   },
   {
-    q: "What are the 3 elemental floor themes leading up to the 3-Faced Dire Wolf Boss?",
-    options: ["Earth, Wind & Water", "Ice (Floor 1), Fire (Floor 2) & Shadow (Floor 3)", "Gold, Silver & Bronze", "Sun, Moon & Stars"],
+    q: "What are the 3 elemental floor themes leading down to the 3-Faced Dire Wolf Boss?",
+    options: ["Earth, Wind & Water", "Ice (Depth 1), Fire (Depth 2) & Shadow (Depth 3)", "Gold, Silver & Bronze", "Sun, Moon & Stars"],
     answerIdx: 1,
   },
   {
@@ -59,7 +59,7 @@ const TRIVIA_QUESTIONS: Array<{ q: string; options: [string, string, string, str
 /**
  * Minimal, clean controller for:
  * 1. Top HUD Indian Standard Time (IST) & Day/Sunset/Night Cycle Switcher
- * 2. Compact Context Action Bar (only visible when standing in an activity zone)
+ * 2. Compact Context Action Bar (visible in activity zones OR when near a non-friend player anywhere)
  * 3. Shared Pixel Graffiti Mural Painter Modal (opened with E near the Mural)
  * 4. East Multiplayer Arcade Modal (opened with E inside the Arcade)
  */
@@ -112,6 +112,7 @@ export class ActivitiesController {
   onEatMeat: () => void = () => {};
   onSitCampfire: () => void = () => {};
   onDungeonAction: (action: DungeonActionType) => void = () => {};
+  onSendFriendRequest: (toSessionId: string) => void = () => {};
   onOpenMuralChange: (open: boolean) => void = () => {};
 
   private currentMode: TimeMode = "ist";
@@ -359,7 +360,7 @@ export class ActivitiesController {
 
   /**
    * Shows a compact context button bar when the player is inside one of the
-   * activity zones (Mural, Football, Arcade, Campfire/Forest, or the 4-Floor Brick Dungeon).
+   * activity zones OR standing near any non-friend player anywhere in the world.
    */
   updateContextBar(opts: {
     tool: ToolId;
@@ -384,8 +385,10 @@ export class ActivitiesController {
     mimicTrapped: number;
     anyPeerMimicTrapped: boolean;
     isNight: boolean;
+    nearbyStranger?: { sessionId: string; name: string };
   }) {
     const activeZone =
+      Boolean(opts.nearbyStranger) ||
       opts.nearMural ||
       opts.onOpenMic ||
       opts.inFootball ||
@@ -407,6 +410,7 @@ export class ActivitiesController {
           : 2;
 
     const key = [
+      opts.nearbyStranger?.sessionId ?? "",
       opts.tool,
       opts.team,
       opts.rawMeat,
@@ -444,6 +448,11 @@ export class ActivitiesController {
       this.activityActionsEl.appendChild(b);
     };
 
+    if (opts.nearbyStranger) {
+      const target = opts.nearbyStranger;
+      addBtn(`👋 + Add Friend: ${target.name}`, "accent", () => this.onSendFriendRequest(target.sessionId));
+    }
+
     if (opts.nearMural) {
       addBtn("🎨 Paint Mural (E)", "accent", () => this.openMuralModal());
     }
@@ -477,12 +486,12 @@ export class ActivitiesController {
       if (floorNum === 1) {
         if (f1Stage === 1) {
           addBtn(
-            opts.dungeonWing === 1 ? "❄️ West Frost Wing ✓" : "❄️ Pull West Lever (E)",
+            opts.dungeonWing === 1 ? "❄️ West Crypt Wing ✓" : "❄️ Pull West Lever (E)",
             opts.dungeonWing === 1 ? "accent" : "primary",
             () => this.onDungeonAction("lever1"),
           );
           addBtn(
-            opts.dungeonWing === 2 ? "❄️ East Frost Wing ✓" : "❄️ Pull East Lever (E)",
+            opts.dungeonWing === 2 ? "❄️ East Crypt Wing ✓" : "❄️ Pull East Lever (E)",
             opts.dungeonWing === 2 ? "accent" : "primary",
             () => this.onDungeonAction("lever2"),
           );
@@ -505,7 +514,7 @@ export class ActivitiesController {
         } else {
           addBtn("👑 Unlock Golden Royal Vault (E)", "accent", () => this.onDungeonAction("vault"));
         }
-        addBtn("🌊 Waterfall Slide to Floor 1", "primary", () => this.onDungeonAction("escapeSlide"));
+        addBtn("🌀 Abyssal Geyser to Surface", "primary", () => this.onDungeonAction("escapeSlide"));
       }
 
       if (opts.cookedMeat > 0) {
