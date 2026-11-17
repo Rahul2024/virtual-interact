@@ -322,10 +322,13 @@ interface AnimalMeshEntry {
 
 export function createWorld(container: HTMLElement, labelContainer: HTMLElement): World {
   const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
+  const renderer = new THREE.WebGLRenderer({
+    antialias: !isTouchDevice,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.25 : 1.75));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = isTouchDevice ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
   container.appendChild(renderer.domElement);
@@ -587,14 +590,15 @@ function addAtmosphereAndLights(scene: THREE.Scene) {
   const sun = new THREE.DirectionalLight("#fff4e0", 2.2);
   sun.position.set(55, 75, 35);
   sun.castShadow = true;
-  const shadowSize = window.matchMedia("(pointer: coarse)").matches ? 1024 : 2048;
+  const isTouch = window.matchMedia("(pointer: coarse)").matches;
+  const shadowSize = isTouch ? 512 : 1024;
   sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 300;
-  sun.shadow.camera.left = -150;
-  sun.shadow.camera.right = 150;
-  sun.shadow.camera.top = 150;
-  sun.shadow.camera.bottom = -150;
+  sun.shadow.camera.far = 240;
+  sun.shadow.camera.left = -110;
+  sun.shadow.camera.right = 110;
+  sun.shadow.camera.top = 110;
+  sun.shadow.camera.bottom = -110;
   sun.shadow.bias = -0.0005;
   scene.add(sun);
   scene.add(sun.target);
@@ -704,7 +708,7 @@ function addPlaza(
     const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
     const x = Math.cos(a) * 13;
     const z = Math.sin(a) * 13;
-    if (i % 2 === 0) addLamp(scene, colliders, x, z, lampHeads, streetLights, true);
+    if (i % 2 === 0) addLamp(scene, colliders, x, z, lampHeads, streetLights, i === 0 || i === 4);
     else addBench(scene, colliders, x, z, a + Math.PI / 2);
   }
 }
@@ -796,13 +800,13 @@ function addAvenues(
   }
 
   const lampCoords: Array<[number, number, boolean]> = [
-    [5, -26, true],
+    [5, -26, false],
     [-5, -26, false],
-    [5, 26, true],
+    [5, 26, false],
     [-5, 26, false],
-    [-35, 4, true],
+    [-35, 4, false],
     [-35, -4, false],
-    [35, 4, true],
+    [35, 4, false],
     [35, -4, false],
   ];
   for (const [lx, lz, hasLight] of lampCoords) {
@@ -2848,6 +2852,15 @@ function addBuildings(
 function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
   const rand = mulberry32(20261029);
   const trunkGeo = new THREE.CylinderGeometry(0.18, 0.3, 1.8, 7);
+  const banyanTrunkGeo = new THREE.CylinderGeometry(0.28, 0.45, 2.2, 7);
+  const fallenLogGeo = new THREE.CylinderGeometry(0.32, 0.36, 2.8, 8);
+  const vineGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5);
+  const fernGeo = new THREE.ConeGeometry(0.65, 0.75, 5);
+  const bushGeo = new THREE.DodecahedronGeometry(0.55, 1);
+  const berryGeo = new THREE.SphereGeometry(0.15, 6, 6);
+  const stemGeo = new THREE.CylinderGeometry(0.05, 0.07, 0.28, 6);
+  const capGeo = new THREE.ConeGeometry(0.22, 0.18, 7);
+
   const trunkMat = standard(PALETTE.trunk);
   const birchMat = standard(PALETTE.birchTrunk);
   const leafGeos = [
@@ -2861,6 +2874,48 @@ function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
   const mushroomCapMat = standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.4 });
   const mushroomPurpleMat = standard("#c084fc", { emissive: "#9333ea", emissiveIntensity: 1.4 });
   const stemMat = standard("#f1f5f9");
+
+  // Batched InstancedMesh buckets so 340 trees render in ~25 draw calls instead of ~900+.
+  const trunkMatrices: THREE.Matrix4[] = [];
+  const birchMatrices: THREE.Matrix4[] = [];
+  const banyanTrunkMatrices: THREE.Matrix4[] = [];
+  const fallenLogMatrices: THREE.Matrix4[] = [];
+  const vineMatrices: THREE.Matrix4[] = [];
+  const fernMatrices: THREE.Matrix4[] = [];
+  const bushMatrices: THREE.Matrix4[] = [];
+  const berryMatrices: THREE.Matrix4[] = [];
+  const stemMatrices: THREE.Matrix4[] = [];
+  const capBlueMatrices: THREE.Matrix4[] = [];
+  const capPurpleMatrices: THREE.Matrix4[] = [];
+  const leafBuckets: THREE.Matrix4[][][] = leafGeos.map(() => leafMats.map(() => []));
+
+  const treeMatrix = new THREE.Matrix4();
+  const localMatrix = new THREE.Matrix4();
+  const treePos = new THREE.Vector3();
+  const treeQuat = new THREE.Quaternion();
+  const treeScale = new THREE.Vector3();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  const zAxis = new THREE.Vector3(0, 0, 1);
+  const localPos = new THREE.Vector3();
+  const localQuat = new THREE.Quaternion();
+  const localScale = new THREE.Vector3();
+  const logQuat = new THREE.Quaternion().setFromAxisAngle(zAxis, Math.PI / 2);
+
+  const pushPart = (
+    bucket: THREE.Matrix4[],
+    lx: number,
+    ly: number,
+    lz: number,
+    sx = 1,
+    sy = 1,
+    sz = 1,
+    quat?: THREE.Quaternion,
+  ) => {
+    localPos.set(lx, ly, lz);
+    localScale.set(sx, sy, sz);
+    localMatrix.compose(localPos, quat ?? localQuat, localScale);
+    bucket.push(new THREE.Matrix4().multiplyMatrices(treeMatrix, localMatrix));
+  };
 
   let placed = 0;
   let attempts = 0;
@@ -2892,93 +2947,80 @@ function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
     if (colliders.boxes.some((b) => Math.abs(x - b.x) < b.hw + 2.2 && Math.abs(z - b.z) < b.hd + 2.2)) continue;
     if (colliders.circles.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + 1.6)) continue;
 
-    const tree = new THREE.Group();
     const scale = inSouthForest ? 1.0 + rand() * 1.15 : 0.8 + rand() * 0.65;
     const speciesRoll = inSouthForest ? placed % 5 : placed % 2;
+    const yaw = rand() * Math.PI * 2;
+
+    treePos.set(x, 0, z);
+    treeQuat.setFromAxisAngle(yAxis, yaw);
+    treeScale.setScalar(scale);
+    treeMatrix.compose(treePos, treeQuat, treeScale);
 
     if (speciesRoll === 0) {
-      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 0.9;
-      trunk.castShadow = true;
-      const l1 = new THREE.Mesh(leafGeos[0]!, leafMats[placed % leafMats.length]!);
-      l1.position.y = 2.6;
-      l1.castShadow = true;
-      const l2 = new THREE.Mesh(leafGeos[1]!, leafMats[(placed + 1) % leafMats.length]!);
-      l2.position.y = 3.9;
-      l2.castShadow = true;
-      tree.add(trunk, l1, l2);
+      pushPart(trunkMatrices, 0, 0.9, 0);
+      pushPart(leafBuckets[0]![placed % leafMats.length]!, 0, 2.6, 0);
+      pushPart(leafBuckets[1]![(placed + 1) % leafMats.length]!, 0, 3.9, 0);
     } else if (speciesRoll === 1) {
-      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 0.9;
-      trunk.castShadow = true;
-      const canopy = new THREE.Mesh(leafGeos[2]!, leafMats[(placed + 2) % leafMats.length]!);
-      canopy.position.y = 2.9;
-      canopy.castShadow = true;
-      const subCanopy = new THREE.Mesh(leafGeos[2]!, leafMats[(placed + 3) % leafMats.length]!);
-      subCanopy.scale.setScalar(0.72);
-      subCanopy.position.set(0.85, 2.4, 0.4);
-      tree.add(trunk, canopy, subCanopy);
+      pushPart(trunkMatrices, 0, 0.9, 0);
+      pushPart(leafBuckets[2]![(placed + 2) % leafMats.length]!, 0, 2.9, 0);
+      pushPart(leafBuckets[2]![(placed + 3) % leafMats.length]!, 0.85, 2.4, 0.4, 0.72, 0.72, 0.72);
     } else if (speciesRoll === 2) {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.45, 2.2, 7), trunkMat);
-      trunk.position.y = 1.1;
-      trunk.castShadow = true;
-      const crown = new THREE.Mesh(leafGeos[2]!, leafMats[5]!);
-      crown.scale.set(1.35, 0.85, 1.35);
-      crown.position.y = 3.1;
-      crown.castShadow = true;
-      tree.add(trunk, crown);
-      for (const vx of [-0.9, 0.9]) {
-        const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 5), vineMat);
-        vine.position.set(vx, 1.9, 0.5);
-        tree.add(vine);
-      }
+      pushPart(banyanTrunkMatrices, 0, 1.1, 0);
+      pushPart(leafBuckets[2]![5]!, 0, 3.1, 0, 1.35, 0.85, 1.35);
+      pushPart(vineMatrices, -0.9, 1.9, 0.5);
+      pushPart(vineMatrices, 0.9, 1.9, 0.5);
     } else if (speciesRoll === 3) {
-      const trunk = new THREE.Mesh(trunkGeo, birchMat);
-      trunk.position.y = 0.9;
-      trunk.castShadow = true;
-      const crown = new THREE.Mesh(leafGeos[1]!, leafMats[4]!);
-      crown.position.y = 2.8;
-      crown.castShadow = true;
-      tree.add(trunk, crown);
+      pushPart(birchMatrices, 0, 0.9, 0);
+      pushPart(leafBuckets[1]![4]!, 0, 2.8, 0);
     } else {
-      const fallenLog = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 2.8, 8), trunkMat);
-      fallenLog.rotation.z = Math.PI / 2;
-      fallenLog.position.y = 0.3;
-      fallenLog.castShadow = true;
-      tree.add(fallenLog);
+      pushPart(fallenLogMatrices, 0, 0.3, 0, 1, 1, 1, logQuat);
     }
 
     if (inSouthForest) {
       if (placed % 4 === 0) {
-        const fern = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.75, 5), leafMats[2]!);
-        fern.position.set(0.95, 0.35, -0.5);
-        tree.add(fern);
+        pushPart(fernMatrices, 0.95, 0.35, -0.5);
       }
       if (placed % 6 === 0) {
-        const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 1), leafMats[0]!);
-        bush.position.set(1.1, 0.35, 0.4);
-        const berry = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), berryMat);
-        berry.position.set(1.1, 0.75, 0.55);
-        tree.add(bush, berry);
+        pushPart(bushMatrices, 1.1, 0.35, 0.4);
+        pushPart(berryMatrices, 1.1, 0.75, 0.55);
       }
       if (placed % 5 === 0) {
-        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.28, 6), stemMat);
-        stem.position.set(-0.85, 0.14, 0.65);
-        const cap = new THREE.Mesh(
-          new THREE.ConeGeometry(0.22, 0.18, 7),
-          placed % 10 === 0 ? mushroomPurpleMat : mushroomCapMat,
-        );
-        cap.position.set(-0.85, 0.3, 0.65);
-        tree.add(stem, cap);
+        pushPart(stemMatrices, -0.85, 0.14, 0.65);
+        pushPart(placed % 10 === 0 ? capPurpleMatrices : capBlueMatrices, -0.85, 0.3, 0.65);
       }
     }
 
-    tree.scale.setScalar(scale);
-    tree.rotation.y = rand() * Math.PI * 2;
-    tree.position.set(x, 0, z);
-    scene.add(tree);
-
     colliders.circles.push({ x, z, r: 0.36 * scale });
     placed++;
+  }
+
+  const flushInstanced = (geo: THREE.BufferGeometry, mat: THREE.Material, matrices: THREE.Matrix4[]) => {
+    if (matrices.length === 0) return;
+    const inst = new THREE.InstancedMesh(geo, mat, matrices.length);
+    inst.castShadow = false;
+    inst.receiveShadow = false;
+    for (let i = 0; i < matrices.length; i++) {
+      inst.setMatrixAt(i, matrices[i]!);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    scene.add(inst);
+  };
+
+  flushInstanced(trunkGeo, trunkMat, trunkMatrices);
+  flushInstanced(trunkGeo, birchMat, birchMatrices);
+  flushInstanced(banyanTrunkGeo, trunkMat, banyanTrunkMatrices);
+  flushInstanced(fallenLogGeo, trunkMat, fallenLogMatrices);
+  flushInstanced(vineGeo, vineMat, vineMatrices);
+  flushInstanced(fernGeo, leafMats[2]!, fernMatrices);
+  flushInstanced(bushGeo, leafMats[0]!, bushMatrices);
+  flushInstanced(berryGeo, berryMat, berryMatrices);
+  flushInstanced(stemGeo, stemMat, stemMatrices);
+  flushInstanced(capGeo, mushroomCapMat, capBlueMatrices);
+  flushInstanced(capGeo, mushroomPurpleMat, capPurpleMatrices);
+
+  for (let gIdx = 0; gIdx < leafGeos.length; gIdx++) {
+    for (let mIdx = 0; mIdx < leafMats.length; mIdx++) {
+      flushInstanced(leafGeos[gIdx]!, leafMats[mIdx]!, leafBuckets[gIdx]![mIdx]!);
+    }
   }
 }

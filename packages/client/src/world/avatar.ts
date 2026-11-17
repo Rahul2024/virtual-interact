@@ -281,7 +281,6 @@ export class Avatar {
     const isCinemaSeat = this.seatId >= 0 && this.seatId < 24;
 
     this.popcornTub.visible = this.anim === ANIM.popcorn || isCinemaSeat;
-    this.setTool(this.tool);
     if (this.tool === TOOL.torch) {
       this.torchLight.intensity = 6.2 + Math.sin(t * 14) * 0.65 + Math.cos(t * 23) * 0.35;
       this.torchLight.distance = 24;

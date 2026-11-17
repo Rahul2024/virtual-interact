@@ -111,6 +111,7 @@ export class CinemaController {
 
   // Dual-mode state
   expanded = false;
+  overlayControlsOpen = false;
   hideStrangerBubbles = false;
 
   // Persistent Embed Host & Shield
@@ -149,6 +150,7 @@ export class CinemaController {
 
   // DOM Elements — Expanded Fullscreen Overlay
   private overlay = el<HTMLDivElement>("cinema-overlay");
+  private overlayToggleBtn = el<HTMLButtonElement>("cinema-overlay-toggle");
   private overlayCanvas = el<HTMLCanvasElement>("cinema-overlay-canvas");
   private overlayEmbedSlot = el<HTMLDivElement>("cinema-overlay-embed-slot");
   private overlayCtx: CanvasRenderingContext2D;
@@ -320,6 +322,15 @@ export class CinemaController {
     this.sitFriendsBtn.addEventListener("click", () => this.onSitWithFriends());
     this.expandBtn.addEventListener("click", () => this.setExpanded(true));
     this.minimizeBtn.addEventListener("click", () => this.setExpanded(false));
+    this.overlayToggleBtn.addEventListener("click", () => this.setOverlayControlsOpen(!this.overlayControlsOpen));
+    window.addEventListener("keydown", (e) => {
+      if (!this.expanded) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "c" || e.key === "C") {
+        this.setOverlayControlsOpen(!this.overlayControlsOpen);
+      }
+    });
 
     this.dockUrlForm.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -775,9 +786,17 @@ export class CinemaController {
     );
   }
 
+  setOverlayControlsOpen(open: boolean) {
+    this.overlayControlsOpen = open;
+    this.overlay.classList.toggle("controls-open", open);
+    this.overlayToggleBtn.textContent = open ? "✕ Hide Controls" : "🎛️ Controls";
+  }
+
   setExpanded(expanded: boolean) {
     this.expanded = expanded;
     this.overlay.hidden = !expanded;
+    this.setOverlayControlsOpen(false);
+    this.lastProjBounds = "";
     this.syncStageVisibility();
     this.onModalOpenChange(expanded || !this.friendsModal.hidden);
   }

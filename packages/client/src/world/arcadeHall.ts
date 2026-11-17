@@ -78,13 +78,15 @@ export function addArcadeHall(scene: THREE.Scene, colliders: Colliders): { poker
     }
   }
 
-  // Chandeliers: warm point lights with glowing crystal bodies.
+  // Chandeliers: warm emissive crystal bodies, with 2 shared PointLights for fast GPU shading.
   const glowMat = new THREE.MeshStandardMaterial({ color: "#ffe9b0", emissive: "#ffcf6a", emissiveIntensity: 2.4 });
-  const chandelierAt = (x: number, z: number, intensity: number) => {
-    const light = new THREE.PointLight("#ffd27a", intensity, 22, 2);
-    light.position.set(x, h - 1.6, z);
-    light.castShadow = false;
-    g.add(light);
+  const chandelierAt = (x: number, z: number, intensity: number, withLight = false) => {
+    if (withLight) {
+      const light = new THREE.PointLight("#ffd27a", intensity, 26, 1.8);
+      light.position.set(x, h - 1.6, z);
+      light.castShadow = false;
+      g.add(light);
+    }
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 10), glowMat);
     body.position.set(x, h - 1.6, z);
     g.add(body);
@@ -102,14 +104,14 @@ export function addArcadeHall(scene: THREE.Scene, colliders: Colliders): { poker
       g.add(candle);
     }
   };
-  chandelierAt(POKER_TABLE.centerX, POKER_TABLE.centerZ, 90); // over the poker table
-  chandelierAt(cx - 10, cz - 7, 55);
-  chandelierAt(cx - 10, cz + 7, 55);
-  chandelierAt(cx + 12, cz - 8, 45);
-  chandelierAt(cx + 12, cz + 8, 45);
+  chandelierAt(POKER_TABLE.centerX, POKER_TABLE.centerZ, 85, true); // over the poker table
+  chandelierAt(cx - 10, cz - 7, 55, false);
+  chandelierAt(cx - 10, cz + 7, 55, false);
+  chandelierAt(cx + 12, cz - 8, 45, false);
+  chandelierAt(cx + 12, cz + 8, 45, false);
   // Soft fill so corners aren't black.
-  const fill = new THREE.PointLight("#b88a4a", 25, 40, 2);
-  fill.position.set(cx, 3.5, cz);
+  const fill = new THREE.PointLight("#b88a4a", 28, 44, 1.6);
+  fill.position.set(cx, 3.8, cz);
   g.add(fill);
 
   // Wall sconces along the long walls.
