@@ -276,137 +276,126 @@ export function isInForestWilderness(x: number, z: number): boolean {
 }
 
 /**
- * 360m-Long 4-Depth Descending Underground Dungeon ("The Abyssal Catacombs of the 3-Faced Dire Wolf"
- * at `x = -24..+24, z = +120..+480`, concealed beneath a compact Haunted Castle Gatehouse on the surface):
- *
- * - DEPTH 1 (`z = 120..210`, `y = 0m` — ❄️ ICE HEAD THEME: Crypt Vestibule, Sunken Aqueduct Rotunda & Mimic Reliquary):
- *   - Narrow Crypt Entry Vestibule (`z = 120..132`) opening into the Grand Sunken Aqueduct Rotunda (`z = 132..172`)
- *     with 10 slippery ice stepping-stones, waterfalls pouring from wall grates & dripping ceiling icicles (`z = 138, 152, 166`),
- *     plus branching West & East outer brick walkways (`x = ±14`).
- *   - Narrow Trap Gauntlet (`z = 172..188`) with cracked frost-slab booby traps (`z = 126..182`) & sweeping Frost-Arrow Volleys.
- *   - Shifting Brick T-Junction Levers (`z = 186`), Vaulted 3-Chest Frost Mimic Reliquary with West/East Side Treasure Alcoves (`z = 190..210`)
- *     + Secret Brick Bookcase Wall at `z = 210`.
- * - DESCENDING STAIRWELL 1→2 (`z = 210..226`): Steep subterranean stairwell descending `y = 0m -> -6.0m`.
- * - DEPTH 2 (`z = 226..316`, `y = -6.0m` — 🔥 FIRE HEAD THEME: Cinder-Web Tunnels & Molten Forge Rotunda):
- *   - Cramped Cinder-Web Tunnels (`z = 226..258`) with sticky Spider-Web Curtains (`z = 238, 256, 274`) burnable with a 🔥 Torch
- *     + 4 Giant Ceiling Spiders (`spider-1..4`) dropping on silk threads.
- *   - Colossal Subterranean Molten Forge Rotunda (`z = 258..296`) with obsidian anvil columns, magma channels,
- *     Swinging Molten Pendulum Blades (`z = 262, 278, 294`), and Narrow Boulder Chute (`fireBoulderZ` in `280..314`).
- * - DESCENDING STAIRWELL 2→3 (`z = 316..332`): Subterranean stairwell descending `y = -6.0m -> -12.0m`.
- * - DEPTH 3 (`z = 332..404`, `y = -12.0m` — 🌑 SHADOW HEAD THEME: Abyssal Shadow Chasm & Twin Iron Gaol):
- *   - Vast Underground Chasm Cavern (`z = 332..370`) with 3 branching paths over a glowing purple crystal abyss,
- *     followed by Cramped Twin Iron-Bar Gaol Cells (`z = 370..404`) with Loose Brick Portcullis Switches (`z = 382`, Gate at `z = 388`)
- *     and 4 prowling Small Shadow Wolves (`shadow-wolf-1..4`).
- * - DESCENDING STAIRWELL 3→4 (`z = 404..420`): Deepest sanctum stairwell descending `y = -12.0m -> -18.0m`.
- * - DEPTH 4 (`z = 420..480`, `y = -18.0m` — 👑 BOSS SANCTUM: Subterranean Cathedral of the 3-Faced Dire Wolf):
- *   - Narrow Ritual Antechamber (`z = 420..432`) opening into the 44m-wide vaulted Underground Cathedral where Cerberus,
- *     the 3-Faced Dire Wolf (`boss-cerberus`, 30 HP) guards the Golden Royal Vault (`z = 470`) and the Abyssal Geyser Portal (`z = 476`).
+ * Surface Landmark: Compact Haunted Castle Gatehouse (`z = 115..121`) with an
+ * Ominous Abyssal Portal Doorway that teleports players to the off-map
+ * 4-Depth Underground Dungeon (`BRICK_DUNGEON`, `z = 1200..1560`).
+ */
+export const HAUNTED_GATE = {
+  x: 0,
+  z: 120,
+  portalZ: 119.3,
+  portalHalfW: 4.1,
+  exitX: 0,
+  exitZ: 115.0,
+} as const;
+
+export function isAtHauntedGatePortal(x: number, z: number): boolean {
+  return Math.abs(x - HAUNTED_GATE.x) <= HAUNTED_GATE.portalHalfW && z >= HAUNTED_GATE.portalZ - 0.8 && z <= HAUNTED_GATE.z + 1.2;
+}
+
+const DUNGEON_Z_OFFSET = 1080;
+
+/**
+ * 360m-Long 4-Depth Descending Underground Dungeon ("The Abyssal Catacombs of the 3-Faced Dire Wolf")
+ * located off-map at `z = 1200..1560` so it never collides with or loads on the surface world!
+ * Players enter via the Haunted Castle Gatehouse portal and it lazy-loads on entry.
  */
 export const BRICK_DUNGEON = {
   centerX: 0,
-  startZ: 120,
-  endZ: 480,
+  startZ: 120 + DUNGEON_Z_OFFSET,
+  endZ: 480 + DUNGEON_Z_OFFSET,
   halfW: 19.0,
   bossHalfW: 22.0,
 
-  // Depth 1: Ice Crypts & Aqueduct Rotunda (z = 120..210, y = 0)
-  waterStartZ: 132,
-  waterEndZ: 172,
-  hall1EndZ: 184,
-  junctionZ: 186,
-  mimicRoomStartZ: 190,
-  mimicRoomEndZ: 210,
-  secretWallZ: 210,
+  // Depth 1: Ice Crypts & Aqueduct Rotunda (y = 0)
+  waterStartZ: 132 + DUNGEON_Z_OFFSET,
+  waterEndZ: 172 + DUNGEON_Z_OFFSET,
+  hall1EndZ: 184 + DUNGEON_Z_OFFSET,
+  junctionZ: 186 + DUNGEON_Z_OFFSET,
+  mimicRoomStartZ: 190 + DUNGEON_Z_OFFSET,
+  mimicRoomEndZ: 210 + DUNGEON_Z_OFFSET,
+  secretWallZ: 210 + DUNGEON_Z_OFFSET,
 
-  // Descending Stairwell 1->2 (z = 210..226, y = 0..-6)
-  stairs1StartZ: 210,
-  stairs1EndZ: 226,
+  // Descending Stairwell 1->2 (y = 0..-6)
+  stairs1StartZ: 210 + DUNGEON_Z_OFFSET,
+  stairs1EndZ: 226 + DUNGEON_Z_OFFSET,
   floor2Y: -6.0,
 
-  // Depth 2: Fire & Spider-Web Catacombs (z = 226..316, y = -6)
-  web1Z: 238,
-  web2Z: 256,
-  web3Z: 274,
-  pendulum1Z: 262,
-  pendulum2Z: 278,
-  pendulum3Z: 294,
-  boulderStartZ: 280,
-  boulderEndZ: 314,
-  floor2EndZ: 316,
+  // Depth 2: Fire & Spider-Web Catacombs (y = -6)
+  web1Z: 238 + DUNGEON_Z_OFFSET,
+  web2Z: 256 + DUNGEON_Z_OFFSET,
+  web3Z: 274 + DUNGEON_Z_OFFSET,
+  pendulum1Z: 262 + DUNGEON_Z_OFFSET,
+  pendulum2Z: 278 + DUNGEON_Z_OFFSET,
+  pendulum3Z: 294 + DUNGEON_Z_OFFSET,
+  boulderStartZ: 280 + DUNGEON_Z_OFFSET,
+  boulderEndZ: 314 + DUNGEON_Z_OFFSET,
+  floor2EndZ: 316 + DUNGEON_Z_OFFSET,
 
-  // Descending Stairwell 2->3 (z = 316..332, y = -6..-12)
-  stairs2StartZ: 316,
-  stairs2EndZ: 332,
+  // Descending Stairwell 2->3 (y = -6..-12)
+  stairs2StartZ: 316 + DUNGEON_Z_OFFSET,
+  stairs2EndZ: 332 + DUNGEON_Z_OFFSET,
   floor3Y: -12.0,
 
-  // Depth 3: Shadow Chasm & Twin Iron Gaol (z = 332..404, y = -12)
-  chasmStartZ: 340,
-  chasmEndZ: 368,
-  parallelStartZ: 372,
-  switchZ: 382,
-  gateZ: 388,
-  floor3EndZ: 404,
+  // Depth 3: Shadow Chasm & Twin Iron Gaol (y = -12)
+  chasmStartZ: 340 + DUNGEON_Z_OFFSET,
+  chasmEndZ: 368 + DUNGEON_Z_OFFSET,
+  parallelStartZ: 372 + DUNGEON_Z_OFFSET,
+  switchZ: 382 + DUNGEON_Z_OFFSET,
+  gateZ: 388 + DUNGEON_Z_OFFSET,
+  floor3EndZ: 404 + DUNGEON_Z_OFFSET,
 
-  // Descending Stairwell 3->4 (z = 404..420, y = -12..-18)
-  stairs3StartZ: 404,
-  stairs3EndZ: 420,
+  // Descending Stairwell 3->4 (y = -12..-18)
+  stairs3StartZ: 404 + DUNGEON_Z_OFFSET,
+  stairs3EndZ: 420 + DUNGEON_Z_OFFSET,
   floor4Y: -18.0,
 
-  // Depth 4: Colossal Subterranean Boss Cathedral (z = 420..480, y = -18)
-  sanctumStartZ: 420,
-  bossHomeZ: 446,
-  vaultChestZ: 470,
-  escapeSlideZ: 476,
+  // Depth 4: Colossal Subterranean Boss Cathedral (y = -18)
+  sanctumStartZ: 420 + DUNGEON_Z_OFFSET,
+  bossHomeZ: 446 + DUNGEON_Z_OFFSET,
+  vaultChestZ: 470 + DUNGEON_Z_OFFSET,
+  escapeSlideZ: 476 + DUNGEON_Z_OFFSET,
 
-  // ---- Hazard geometry. The ONLY place these numbers live: the server
-  // checks them, the client draws them and builds colliders from them. ----
-
-  // Depth 1
-  /** Cracked-slab rows; one slab per row is cracked (which one depends on dungeonSeed). */
-  slabRowZs: [126, 175, 181],
+  // ---- Hazard geometry ----
+  slabRowZs: [126 + DUNGEON_Z_OFFSET, 175 + DUNGEON_Z_OFFSET, 181 + DUNGEON_Z_OFFSET],
   slabCenterX: 2.6,
   slabHalfW: 2.1,
   slabHalfD: 1.2,
-  /** Ceiling grates that douse torches; the drip is on one side per row. */
-  grateZs: [138, 152, 166],
+  grateZs: [138 + DUNGEON_Z_OFFSET, 152 + DUNGEON_Z_OFFSET, 166 + DUNGEON_Z_OFFSET],
   grateDripX: 1.4,
   grateDripHalfW: 1.3,
-  /** Canal: safe on the stepping stones (|x| ≤ stoneHalfW) or walkways (|x| ≥ walkwayMinX). */
   canalStoneHalfW: 2.9,
   canalWalkwayMinX: 10.8,
-  /** Arrow volley sweeps the central lane only. */
   arrowHalfW: 3.8,
   arrowHalfD: 1.1,
-  /** Shifting partition: one wing open at a time. Closed wing spans x ∈ [0.5, partitionOuterX]. */
-  partitionZ: 190.5,
+  partitionZ: 190.5 + DUNGEON_Z_OFFSET,
   partitionHalfD: 0.7,
   partitionInnerX: 0.5,
   partitionOuterX: 16.5,
-  /** Mimic alcove: chests 1..3 at these x, all at chestZ. */
   chestXs: [-5.2, 0, 5.2],
-  chestZ: 201.5,
+  chestZ: 201.5 + DUNGEON_Z_OFFSET,
   chestReach: 2.6,
-  /** Secret bookcase wall spans the full hallway width until the grimoire is found. */
   secretWallHalfD: 0.6,
 
   // Depth 2
-  /** Web curtains block the centre; the galleries at |x| ≥ webHalfW stay open. */
   webHalfW: 8.5,
   webHalfD: 0.35,
   boulderRadius: 2.6,
   boulderHitHalfW: 3.0,
 
   // Depth 3
-  /** Chasm: safe on the bridge (|x| ≤ bridgeHalfW) or catwalks (|x| ≥ catwalkMinX). */
   chasmBridgeHalfW: 3.2,
   chasmCatwalkMinX: 11.0,
-  ironBarsStartZ: 372,
-  ironBarsEndZ: 392,
+  ironBarsStartZ: 372 + DUNGEON_Z_OFFSET,
+  ironBarsEndZ: 392 + DUNGEON_Z_OFFSET,
   ironBarsHalfW: 0.4,
-  /** Each portcullis spans its half of the hallway, x ∈ [gateInnerX, halfW]. */
   gateHalfD: 0.4,
   gateInnerX: 0.6,
 } as const;
+
+export function isAtDungeonExitPortal(x: number, z: number): boolean {
+  return Math.abs(x - BRICK_DUNGEON.centerX) <= 5.5 && z >= BRICK_DUNGEON.startZ - 2.0 && z <= BRICK_DUNGEON.startZ + 0.8;
+}
 
 /** The flags that decide which dungeon doors are currently solid. */
 export interface DungeonDoorState {

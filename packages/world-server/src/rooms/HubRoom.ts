@@ -9,7 +9,10 @@ import {
   PRESENCE,
   ARCADE_MSG,
   BRICK_DUNGEON,
+  HAUNTED_GATE,
   dungeonClosedDoors,
+  isAtDungeonExitPortal,
+  isAtHauntedGatePortal,
   type WallBox,
   CAMPFIRE_BASE,
   CINEMA_HALL,
@@ -280,18 +283,18 @@ export class HubRoom extends Room<{ state: HubState }> {
       { id: "snake-2", species: "snake", xMin: 24, xMax: 65, zMin: 85, zMax: 150, hp: 2, speed: 3.5 },
       { id: "snake-3", species: "snake", xMin: -55, xMax: -24, zMin: 118, zMax: 175, hp: 1, speed: 3.2 },
       { id: "snake-4", species: "snake", xMin: 24, xMax: 55, zMin: 118, zMax: 175, hp: 2, speed: 3.4 },
-      // Floor 2 (Fire Hallway): 4 Giant Ember Spiders hanging & patrolling near the cobweb nets
-      { id: "spider-1", species: "spider", xMin: -15, xMax: -2, zMin: 232, zMax: 265, hp: 2, speed: 3.3 },
-      { id: "spider-2", species: "spider", xMin: 2, xMax: 15, zMin: 235, zMax: 270, hp: 2, speed: 3.4 },
-      { id: "spider-3", species: "spider", xMin: -15, xMax: 0, zMin: 268, zMax: 306, hp: 2, speed: 3.3 },
-      { id: "spider-4", species: "spider", xMin: 0, xMax: 15, zMin: 270, zMax: 308, hp: 2, speed: 3.5 },
-      // Floor 3 (Shadow Hallway & Grand Stairs): 4 Small Shadow Wolves guarding the approach to the Boss!
-      { id: "shadow-wolf-1", species: "shadow_wolf", xMin: -15, xMax: -2, zMin: 344, zMax: 382, hp: 3, speed: 3.9 },
-      { id: "shadow-wolf-2", species: "shadow_wolf", xMin: 2, xMax: 15, zMin: 346, zMax: 384, hp: 3, speed: 3.9 },
-      { id: "shadow-wolf-3", species: "shadow_wolf", xMin: -12, xMax: -1, zMin: 388, zMax: 416, hp: 3, speed: 4.1 },
-      { id: "shadow-wolf-4", species: "shadow_wolf", xMin: 1, xMax: 12, zMin: 388, zMax: 416, hp: 3, speed: 4.1 },
-      // Floor 4 (Colossal Sanctum): CERBERUS, THE 3-FACED DIRE WOLF FINAL BOSS (30 HP!)
-      { id: "boss-cerberus", species: "cerberus", xMin: -12, xMax: 12, zMin: 434, zMax: 460, hp: 30, speed: 3.6 },
+      // Depth 2: 4 Giant Ember Spiders
+      { id: "spider-1", species: "spider", xMin: -15, xMax: -2, zMin: BRICK_DUNGEON.stairs1EndZ + 6, zMax: BRICK_DUNGEON.stairs1EndZ + 39, hp: 2, speed: 3.3 },
+      { id: "spider-2", species: "spider", xMin: 2, xMax: 15, zMin: BRICK_DUNGEON.stairs1EndZ + 9, zMax: BRICK_DUNGEON.stairs1EndZ + 44, hp: 2, speed: 3.4 },
+      { id: "spider-3", species: "spider", xMin: -15, xMax: 0, zMin: BRICK_DUNGEON.stairs1EndZ + 42, zMax: BRICK_DUNGEON.stairs1EndZ + 80, hp: 2, speed: 3.3 },
+      { id: "spider-4", species: "spider", xMin: 0, xMax: 15, zMin: BRICK_DUNGEON.stairs1EndZ + 44, zMax: BRICK_DUNGEON.stairs1EndZ + 82, hp: 2, speed: 3.5 },
+      // Depth 3: 4 Small Shadow Wolves
+      { id: "shadow-wolf-1", species: "shadow_wolf", xMin: -15, xMax: -2, zMin: BRICK_DUNGEON.stairs2EndZ + 12, zMax: BRICK_DUNGEON.stairs2EndZ + 50, hp: 3, speed: 3.9 },
+      { id: "shadow-wolf-2", species: "shadow_wolf", xMin: 2, xMax: 15, zMin: BRICK_DUNGEON.stairs2EndZ + 14, zMax: BRICK_DUNGEON.stairs2EndZ + 52, hp: 3, speed: 3.9 },
+      { id: "shadow-wolf-3", species: "shadow_wolf", xMin: -12, xMax: -1, zMin: BRICK_DUNGEON.stairs2EndZ + 56, zMax: BRICK_DUNGEON.stairs2EndZ + 84, hp: 3, speed: 4.1 },
+      { id: "shadow-wolf-4", species: "shadow_wolf", xMin: 1, xMax: 12, zMin: BRICK_DUNGEON.stairs2EndZ + 56, zMax: BRICK_DUNGEON.stairs2EndZ + 84, hp: 3, speed: 4.1 },
+      // Depth 4: CERBERUS, THE 3-FACED DIRE WOLF FINAL BOSS (30 HP!)
+      { id: "boss-cerberus", species: "cerberus", xMin: -12, xMax: 12, zMin: BRICK_DUNGEON.sanctumStartZ + 14, zMax: BRICK_DUNGEON.sanctumStartZ + 40, hp: 30, speed: 3.6 },
     ];
     for (const s of specs) {
       const animal = new ForestAnimal();
@@ -422,20 +425,21 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   private tickAnimals(dt: number) {
-    if (this.state.players.size > 0) {
-      let anyInSouth = false;
-      for (const p of this.state.players.values()) {
-        if (p.z > 45) {
-          anyInSouth = true;
-          break;
-        }
-      }
-      if (!anyInSouth) return;
+    let anyInForest = false;
+    let anyInDungeon = false;
+    for (const p of this.state.players.values()) {
+      if (isInBrickDungeon(p.x, p.z)) anyInDungeon = true;
+      else if (p.z > 45) anyInForest = true;
     }
+    if (!anyInForest && !anyInDungeon) return;
+
     const now = Date.now();
     for (const [id, brain] of this.animalBrains.entries()) {
       const animal = this.state.animals.get(id);
       if (!animal) continue;
+      const isDungeonMob = brain.species === "spider" || brain.species === "shadow_wolf" || brain.species === "cerberus";
+      if (isDungeonMob && !anyInDungeon) continue;
+      if (!isDungeonMob && !anyInForest) continue;
 
       if (animal.hp === 0) {
         if (now >= brain.respawnAt) {
@@ -559,14 +563,14 @@ export class HubRoom extends Room<{ state: HubState }> {
    * - FLOOR 4 (`z = 420..480`, `y = +18m` — 👑 SANCTUM OF THE 3-FACED DIRE WOLF)
    */
   private tickBrickDungeon(dt: number) {
-    let anyNearDungeon = this.state.players.size === 0;
+    let anyInDungeon = false;
     for (const p of this.state.players.values()) {
-      if (p.z > 90 || p.mimicTrapped !== 0) {
-        anyNearDungeon = true;
+      if (isInBrickDungeon(p.x, p.z) || p.mimicTrapped !== 0) {
+        anyInDungeon = true;
         break;
       }
     }
-    if (!anyNearDungeon) return;
+    if (!anyInDungeon) return;
 
     // 1. Floor 1 Sweeping Frost-Arrow Volley
     let az = this.state.arrowVolleyZ - 12.5 * dt;
@@ -630,8 +634,8 @@ export class HubRoom extends Room<{ state: HubState }> {
       // ---- HAZARDS: damage with a short grace period after each hit ----
       if (now - sess.lastTrapHitAt < 1500) continue;
 
-      // ---- FLOOR 1: FROST-FANG AQUEDUCT HALLWAY (z = 122..210) ----
-      if (p.z >= 122 && p.z <= D.secretWallZ) {
+      // ---- DEPTH 1: FROST-FANG AQUEDUCT HALLWAY ----
+      if (p.z >= D.startZ + 2 && p.z <= D.secretWallZ) {
         // A. Flooded Underground Ice-Water Canal
         // Safe paths: Central Ice Stepping Stones OR Outer Raised Brick Walkways
         if (p.z >= D.waterStartZ + 1 && p.z <= D.waterEndZ - 1) {
@@ -1643,17 +1647,37 @@ export class HubRoom extends Room<{ state: HubState }> {
       }
     }
 
-    let x = clamp(payload.x, -WORLD.half, WORLD.half);
-    let z = clamp(payload.z, -WORLD.half, WORLD.half);
+    const inDungeonTarget = isInBrickDungeon(payload.x, payload.z);
+    let x = inDungeonTarget
+      ? clamp(payload.x, BRICK_DUNGEON.centerX - BRICK_DUNGEON.bossHalfW - 4, BRICK_DUNGEON.centerX + BRICK_DUNGEON.bossHalfW + 4)
+      : clamp(payload.x, -WORLD.half, WORLD.half);
+    let z = inDungeonTarget
+      ? clamp(payload.z, BRICK_DUNGEON.startZ - 2, BRICK_DUNGEON.endZ + 2)
+      : clamp(payload.z, -WORLD.half, WORLD.half);
 
+    const wasInDungeon = isInBrickDungeon(player.x, player.z);
     const dx = x - player.x;
     const dz = z - player.z;
     const dist = Math.hypot(dx, dz);
     const allowed = PLAYER.maxSpeed * SPEED_SLACK * dt;
-    if (dist > allowed && dist > 0 && player.seatId < 0) {
+    // Allow portal teleport jumps between Haunted Gate and off-map Dungeon
+    const isPortalEntry = !wasInDungeon && isInBrickDungeon(x, z) && isAtHauntedGatePortal(player.x, player.z);
+    const isPortalExit = wasInDungeon && !isInBrickDungeon(x, z) && isAtDungeonExitPortal(player.x, player.z);
+    if (!isPortalEntry && !isPortalExit && dist > allowed && dist > 0 && player.seatId < 0) {
       const k = allowed / dist;
       x = player.x + dx * k;
       z = player.z + dz * k;
+    }
+    if (!wasInDungeon && isAtHauntedGatePortal(x, z)) {
+      x = BRICK_DUNGEON.centerX;
+      z = BRICK_DUNGEON.startZ + 3.5;
+      session.lastSafeX = x;
+      session.lastSafeZ = z;
+    } else if (wasInDungeon && isAtDungeonExitPortal(x, z)) {
+      x = HAUNTED_GATE.exitX;
+      z = HAUNTED_GATE.exitZ;
+      session.lastSafeX = x;
+      session.lastSafeZ = z;
     }
 
     const wasInCinema = (player.seatId >= 0 && player.seatId < CINEMA_HALL.seatCount) || isInCinemaHall(player.x, player.z);

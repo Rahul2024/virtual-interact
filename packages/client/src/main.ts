@@ -31,6 +31,9 @@ import {
   nearestPokerSeat,
   pokerSeatIdFor,
   pokerSeatIndexOf,
+  HAUNTED_GATE,
+  isAtDungeonExitPortal,
+  isAtHauntedGatePortal,
   isInBrickDungeon,
   isInCampfireCircle,
   isInCinemaHall,
@@ -1302,7 +1305,7 @@ function frame(now: number) {
         );
       }
       if (st) {
-        world.colliders.dynamic = dungeonClosedDoors({
+        world.dungeonColliders.dynamic = dungeonClosedDoors({
           dungeonWing: st.dungeonWing ?? 1,
           grimoireFound: st.grimoireFound ?? 0,
           websBurned: st.websBurned ?? 0,
@@ -1503,7 +1506,14 @@ function stepLocal(s: Session, dt: number, now: number) {
   } else if (now >= s.emoteUntil) {
     s.me.anim = ANIM.idle;
   }
-  world.colliders.resolve(s.me.position, PLAYER.radius);
+  const wasInDungeon = isInBrickDungeon(s.me.position.x, s.me.position.z);
+  if (!wasInDungeon && isAtHauntedGatePortal(s.me.position.x, s.me.position.z)) {
+    s.me.position.set(BRICK_DUNGEON.centerX, 0, BRICK_DUNGEON.startZ + 3.5);
+  } else if (wasInDungeon && isAtDungeonExitPortal(s.me.position.x, s.me.position.z)) {
+    s.me.position.set(HAUNTED_GATE.exitX, 0, HAUNTED_GATE.exitZ);
+  }
+  const activeColliders = isInBrickDungeon(s.me.position.x, s.me.position.z) ? world.dungeonColliders : world.colliders;
+  activeColliders.resolve(s.me.position, PLAYER.radius);
   s.me.position.y = getWorldFloorY(s.me.position.x, s.me.position.z);
   s.me.update(dt);
 }

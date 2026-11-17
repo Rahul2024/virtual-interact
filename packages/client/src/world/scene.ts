@@ -8,41 +8,21 @@ import {
   CINEMA_SEATS,
   FOOTBALL_STADIUM,
   GRAFFITI_MURAL,
+  HAUNTED_GATE,
   OPEN_MIC_STAGE,
   SOCIAL_ZONE,
   WORLD,
-  getCinemaFloorY,
   getDungeonFloorY,
-  getWorldFloorY,
   getIndianHourFloat,
   isInBrickDungeon,
 } from "@vi/shared";
 import { Colliders } from "./collision";
 import { addArcadeHall } from "./arcadeHall";
 import type { PokerTableView } from "./pokerTable";
+import type { DungeonRig, DungeonView } from "./dungeon";
 
+export type { DungeonView };
 export type TimeMode = "ist" | "day" | "sunset" | "night";
-
-/**
- * Everything the dungeon rig needs to draw the current server state.
- * Named fields on purpose: an earlier positional version of this call had
- * its arguments in the wrong order, and TypeScript cannot tell two numbers apart.
- */
-export interface DungeonView {
-  dungeonWing: number;
-  dungeonSeed: number;
-  grimoireFound: number;
-  gateLeftOpen: number;
-  gateRightOpen: number;
-  vaultUnlocked: number;
-  arrowVolleyZ: number;
-  fireBoulderZ: number;
-  /** Bitmask of Depth-2 web curtains already burned (bit 0 = web 1). */
-  websBurned: number;
-  /** Bitmask of mimic chests currently chomping someone (bit 0 = chest 1). */
-  chompingChests: number;
-  nowMs: number;
-}
 
 export interface AnimalRenderState {
   id: string;
@@ -60,6 +40,7 @@ export interface World {
   renderer: THREE.WebGLRenderer;
   labelRenderer: CSS2DRenderer;
   colliders: Colliders;
+  dungeonColliders: Colliders;
   screenMesh: THREE.Mesh;
   screenLight: THREE.PointLight;
   muralCanvas: HTMLCanvasElement;
@@ -343,6 +324,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   camera.position.set(0, 6, 12);
 
   const colliders = new Colliders();
+  const dungeonColliders = new Colliders();
   const lampHeads: THREE.Mesh[] = [];
   const streetLights: THREE.PointLight[] = [];
   const windowMaterials: THREE.MeshStandardMaterial[] = [];
@@ -364,12 +346,40 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   // East District: the Royal Arcade Hall (poker table + classic cabinets)
   const { pokerTable } = addArcadeHall(scene, colliders);
 
-  // South District: Foothill Ridge, Deep Campfire Valley, Haunted Castle Gatehouse & Underground Multi-Floor Dungeon
+  // South District: Foothill Ridge, Deep Campfire Valley, Haunted Castle Gatehouse (dungeon lazy-loads on entry!)
   const { campfireLight, flameGroup, fireflies, dragonflies } = addCampfireAndForestWilderness(scene, colliders);
   const hauntedCastle = addHauntedCastleGatehouse(scene, colliders);
-  const dungeonRig = addFrierenBrickDungeon(scene, colliders);
-  // Start with the underground dungeon completely invisible from the outside world!
-  dungeonRig.group.visible = false;
+
+  let dungeonRig: DungeonRig | null = null;
+  let dungeonLoading = false;
+  let lastDungeonView: DungeonView | null = null;
+
+  const ensureDungeonLoaded = () => {
+    if (dungeonRig || dungeonLoading) return;
+    dungeonLoading = true;
+    void import("./dungeon")
+      .then(({ createBrickDungeon }) => {
+        dungeonRig = createBrickDungeon(scene);
+        dungeonColliders.boxes.push(...dungeonRig.colliders.boxes);
+        dungeonColliders.circles.push(...dungeonRig.colliders.circles);
+        if (lastDungeonView) dungeonRig.update(lastDungeonView);
+      })
+      .catch((err) => {
+        console.error("Failed to lazy-load dungeon:", err);
+      })
+      .finally(() => {
+        dungeonLoading = false;
+      });
+  };
+
+  const unloadDungeon = () => {
+    if (!dungeonRig) return;
+    dungeonRig.dispose();
+    dungeonRig = null;
+    dungeonColliders.boxes.length = 0;
+    dungeonColliders.circles.length = 0;
+    dungeonColliders.dynamic = [];
+  };
 
   addBuildings(scene, colliders, windowMaterials);
   addCityAndForestTrees(scene, colliders);
@@ -397,6 +407,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     renderer,
     labelRenderer,
     colliders,
+    dungeonColliders,
     screenMesh,
     screenLight,
     muralCanvas,
@@ -424,11 +435,12 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       }
     },
     setDungeonState(view: DungeonView) {
-      dungeonRig.update(view);
+      lastDungeonView = view;
+      if (dungeonRig) dungeonRig.update(view);
     },
     syncAnimals(animals: AnimalRenderState[]) {
       const now = performance.now();
-      const playerInDungeon = camera.position.z >= BRICK_DUNGEON.startZ - 2.5 && Math.abs(camera.position.x) <= BRICK_DUNGEON.bossHalfW + 6;
+      const playerInDungeon = isInBrickDungeon(camera.position.x, camera.position.z);
       for (const a of animals) {
         let entry = animalEntries.get(a.id);
         if (!entry) {
@@ -516,10 +528,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         surfaceSkyColor.lerpColors(new THREE.Color(PALETTE.skySunset), new THREE.Color(PALETTE.skyNight), (nightFactor - 0.5) * 2);
       }
 
-      const inUndergroundDungeon =
-        camera.position.z >= BRICK_DUNGEON.startZ - 2.0 &&
-        camera.position.z <= BRICK_DUNGEON.endZ + 8.0 &&
-        Math.abs(camera.position.x) <= BRICK_DUNGEON.bossHalfW + 6.0;
+      const inUndergroundDungeon = isInBrickDungeon(camera.position.x, camera.position.z);
 
       if (inUndergroundDungeon) {
         scene.background = abyssBgColor;
@@ -561,17 +570,12 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     },
     resize,
     render() {
-      // Complete Exterior Culling:
-      // The 360m-long 4-depth underground dungeon is 100% invisible from the outside world
-      // (saving WebGL draw calls & memory, and keeping its massive subterranean scale hidden
-      // behind the small Haunted Castle Gatehouse). Once you cross the Ominous Haunted Door
-      // (z >= 118.2), the underground chambers appear and the surface grass planes hide so
-      // you can descend to y = -6m, -12m, and -18m underground without ground plane clipping!
-      const insideDungeon =
-        camera.position.z >= BRICK_DUNGEON.startZ - 2.0 &&
-        camera.position.z <= BRICK_DUNGEON.endZ + 8.0 &&
-        Math.abs(camera.position.x) <= BRICK_DUNGEON.bossHalfW + 6.0;
-      dungeonRig.group.visible = insideDungeon;
+      const insideDungeon = isInBrickDungeon(camera.position.x, camera.position.z);
+      if (insideDungeon) {
+        ensureDungeonLoaded();
+      } else if (dungeonRig) {
+        unloadDungeon();
+      }
       ground.visible = !insideDungeon;
       forestGround.visible = !insideDungeon;
 
@@ -1211,8 +1215,8 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
  * flickering violet/emerald soul-fire sconces, gnarled dead trees, and a swirling Abyssal Mist Door.
  */
 function addHauntedCastleGatehouse(scene: THREE.Scene, colliders: Colliders) {
-  const cx = BRICK_DUNGEON.centerX;
-  const doorZ = BRICK_DUNGEON.startZ; // 120
+  const cx = HAUNTED_GATE.x;
+  const doorZ = HAUNTED_GATE.z; // 120
   const group = new THREE.Group();
 
   const darkCastleStone = createBrickPBRMaterial({
@@ -1306,8 +1310,8 @@ function addHauntedCastleGatehouse(scene: THREE.Scene, colliders: Colliders) {
   // Enclosed Stone Back-Keep Mound (z = 120..124) so from outside it looks like a small self-contained castle keep!
   const keepBackRoof = new THREE.Mesh(new THREE.BoxGeometry(18.0, 7.2, 5.0), darkCastleStone);
   keepBackRoof.position.set(cx, 3.6, doorZ + 2.2);
-  keepBackRoof.position.y = 7.4;
   group.add(keepBackRoof);
+  colliders.boxes.push({ x: cx, z: doorZ + 2.4, hw: 9.0, hd: 1.4 });
 
   // Iron Portcullis Fangs & Heavy Gothic Door Frame at z = 119.5
   for (const side of [-1, 1]) {
@@ -1381,889 +1385,7 @@ function addHauntedCastleGatehouse(scene: THREE.Scene, colliders: Colliders) {
   };
 }
 
-/**
- * Multi-Floored Descending Underground Dungeon ("The Abyssal Catacombs of the 3-Faced Dire Wolf"):
- * Completely hidden from the surface (`dungeonRig.group.visible = false` when outside) and
- * descending 4 subterranean depths (`y = 0m -> -6m -> -12m -> -18m`) with contrasting room geometry
- * inspired by Elden Ring Catacombs/Subterranean Shunning-Grounds, Dark Souls 3 Cathedral of the Deep,
- * and Legend of Zelda room-graphs:
- * - Alternates narrow, low-ceilinged entry vestibules & trap gauntlets with soaring pillared rotundas,
- *   recessed West/East side treasure alcoves, a bottomless amethyst chasm cavern, twin iron gaol cells,
- *   and a colossal subterranean boss cathedral!
- */
-function addFrierenBrickDungeon(scene: THREE.Scene, colliders: Colliders) {
-  const cx = BRICK_DUNGEON.centerX;
-  const startZ = BRICK_DUNGEON.startZ;
-  const endZ = BRICK_DUNGEON.endZ;
-  const hw = BRICK_DUNGEON.halfW;
-  const bossHw = BRICK_DUNGEON.bossHalfW;
-
-  const g = new THREE.Group();
-
-  // PBR Stone-Brick & Flagstone Materials with 3D Bump Map relief
-  const wallBrickMat = createBrickPBRMaterial({ repeatX: 28, repeatY: 3, mossy: true, bumpScale: 0.095 });
-  const shortWallBrickMat = createBrickPBRMaterial({ repeatX: 4, repeatY: 3, mossy: true, bumpScale: 0.09 });
-  const iceFloorMat = createBrickPBRMaterial({
-    repeatX: 8,
-    repeatY: 22,
-    baseColor: "#253545",
-    mossy: true,
-    bumpScale: 0.065,
-  });
-  const fireFloorMat = createBrickPBRMaterial({
-    repeatX: 8,
-    repeatY: 22,
-    baseColor: "#3d2220",
-    bumpScale: 0.075,
-  });
-  const shadowFloorMat = createBrickPBRMaterial({
-    repeatX: 8,
-    repeatY: 18,
-    baseColor: "#221b36",
-    bumpScale: 0.07,
-  });
-  const bossFloorMat = createBrickPBRMaterial({
-    repeatX: 10,
-    repeatY: 16,
-    baseColor: "#2c223b",
-    bumpScale: 0.08,
-  });
-  const intactSlabMat = createBrickPBRMaterial({
-    repeatX: 2,
-    repeatY: 2,
-    baseColor: "#434b5c",
-    bumpScale: 0.06,
-  });
-  const crackedSlabMat = createBrickPBRMaterial({
-    repeatX: 2,
-    repeatY: 2,
-    baseColor: "#38313a",
-    cracked: true,
-    bumpScale: 0.12,
-  });
-  const ironMat = new THREE.MeshStandardMaterial({
-    color: "#272b33",
-    roughness: 0.38,
-    metalness: 0.78,
-  });
-  const goldMat = new THREE.MeshStandardMaterial({
-    color: "#fbbf24",
-    emissive: "#b45309",
-    emissiveIntensity: 0.55,
-    roughness: 0.28,
-    metalness: 0.85,
-  });
-  const chestWoodMat = new THREE.MeshStandardMaterial({
-    color: "#6d3b1e",
-    roughness: 0.72,
-    metalness: 0.1,
-  });
-  const iceCrystalMat = standard("#7dd3fc", {
-    emissive: "#0284c7",
-    emissiveIntensity: 0.75,
-    roughness: 0.18,
-  });
-  const magmaMat = standard("#f97316", {
-    emissive: "#ea580c",
-    emissiveIntensity: 1.6,
-    roughness: 0.35,
-  });
-  const shadowVoidMat = standard("#090514", {
-    emissive: "#3b0764",
-    emissiveIntensity: 0.45,
-    roughness: 0.95,
-  });
-  const amethystMat = standard("#c084fc", {
-    emissive: "#7e22ce",
-    emissiveIntensity: 1.35,
-    roughness: 0.2,
-  });
-
-  /**
-   * Builds a distinct underground room module with configurable visual width (`visHalfW`),
-   * ceiling height (`ceilH`), gothic archway bulkheads, and side alcoves while keeping
-   * outer physics colliders aligned with `BRICK_DUNGEON.halfW` (`19m`).
-   */
-  const addUndergroundChamber = (opts: {
-    z0: number;
-    z1: number;
-    y0: number;
-    visHalfW: number;
-    ceilH: number;
-    floorMat: THREE.Material;
-    sconceColor: string;
-    hasFloor?: boolean;
-    addPillars?: boolean;
-    sideAlcoves?: boolean;
-    colliderHalfW?: number;
-  }) => {
-    const {
-      z0,
-      z1,
-      y0,
-      visHalfW,
-      ceilH,
-      floorMat,
-      sconceColor,
-      hasFloor = true,
-      addPillars = false,
-      sideAlcoves = false,
-      colliderHalfW = hw,
-    } = opts;
-    const segLen = z1 - z0;
-    const segMidZ = (z0 + z1) / 2;
-
-    if (hasFloor) {
-      const fl = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(visHalfW, colliderHalfW) * 2 + 6, segLen + 1.5), floorMat);
-      fl.rotation.x = -Math.PI / 2;
-      fl.position.set(cx, y0 + 0.028, segMidZ);
-      fl.receiveShadow = true;
-      g.add(fl);
-    }
-
-    // Vaulted ceiling at custom chamber height (low 5.2m in tight corridors, 10.5m+ in grand rotundas!)
-    const ceil = new THREE.Mesh(
-      new THREE.BoxGeometry(Math.max(visHalfW, colliderHalfW) * 2 + 8, 1.4, segLen + 1.8),
-      wallBrickMat,
-    );
-    ceil.position.set(cx, y0 + ceilH + 0.6, segMidZ);
-    ceil.castShadow = true;
-    g.add(ceil);
-
-    // Physics boundary walls at colliderHalfW
-    for (const side of [-1, 1]) {
-      const physWallX = cx + side * (colliderHalfW + 0.9);
-      colliders.boxes.push({ x: physWallX, z: segMidZ, hw: 0.9, hd: segLen / 2 });
-
-      // Visual chamber walls at visHalfW
-      const visWallX = cx + side * (visHalfW + 0.9);
-      const outerWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, ceilH + 1.2, segLen + 1.5), wallBrickMat);
-      outerWall.position.set(visWallX, y0 + ceilH / 2, segMidZ);
-      outerWall.castShadow = outerWall.receiveShadow = true;
-      g.add(outerWall);
-    }
-
-    // Threshold Stone Bulkhead Archways at z0 and z1 to frame transitions between small & big rooms
-    for (const az of [z0, z1]) {
-      const lintel = new THREE.Mesh(new THREE.BoxGeometry(visHalfW * 2 + 2, 1.6, 1.4), shortWallBrickMat);
-      lintel.position.set(cx, y0 + ceilH - 0.4, az);
-      g.add(lintel);
-      for (const side of [-1, 1]) {
-        const buttress = new THREE.Mesh(new THREE.BoxGeometry(2.6, ceilH, 1.5), shortWallBrickMat);
-        buttress.position.set(cx + side * (visHalfW - 1.1), y0 + ceilH / 2, az);
-        g.add(buttress);
-      }
-    }
-
-    // Optional Recessed West & East Side Alcove Rooms (for treasure reliquaries / gaol cells)
-    if (sideAlcoves) {
-      for (const side of [-1, 1]) {
-        const alcoveX = cx + side * (visHalfW + 4.2);
-        const alcoveFloor = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.35, segLen * 0.55), intactSlabMat);
-        alcoveFloor.position.set(alcoveX, y0 + 0.18, segMidZ);
-        const alcoveBack = new THREE.Mesh(new THREE.BoxGeometry(1.4, ceilH, segLen * 0.58), shortWallBrickMat);
-        alcoveBack.position.set(alcoveX + side * 3.6, y0 + ceilH / 2, segMidZ);
-        const sarcophagus = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 3.8), intactSlabMat);
-        sarcophagus.position.set(alcoveX, y0 + 0.72, segMidZ);
-        const crystal = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.55, 0),
-          standard(sconceColor, { emissive: sconceColor, emissiveIntensity: 1.8 }),
-        );
-        crystal.position.set(alcoveX, y0 + 2.1, segMidZ);
-        g.add(alcoveFloor, alcoveBack, sarcophagus, crystal);
-      }
-    }
-
-    // Pilasters, Vault Ribs, Sconces, and Optional Grand Rotunda Colonnade Pillars
-    for (let z = z0 + 6; z <= z1 - 4; z += 10) {
-      const overheadRib = new THREE.Mesh(new THREE.BoxGeometry(visHalfW * 2, 0.75, 0.95), shortWallBrickMat);
-      overheadRib.position.set(cx, y0 + ceilH - 0.2, z);
-      g.add(overheadRib);
-
-      for (const side of [-1, 1]) {
-        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.1, ceilH, 0.95), shortWallBrickMat);
-        pilaster.position.set(cx + side * (visHalfW - 0.55), y0 + ceilH / 2, z);
-        g.add(pilaster);
-
-        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.25), ironMat);
-        bracket.position.set(cx + side * (visHalfW - 0.15), y0 + 3.6, z);
-        const flameOrb = new THREE.Mesh(
-          new THREE.ConeGeometry(0.22, 0.48, 6),
-          standard(sconceColor, { emissive: sconceColor, emissiveIntensity: 2.1 }),
-        );
-        flameOrb.position.set(cx + side * (visHalfW - 0.25), y0 + 3.95, z);
-        g.add(bracket, flameOrb);
-
-        if (addPillars) {
-          const col = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, ceilH, 10), shortWallBrickMat);
-          col.position.set(cx + side * 9.6, y0 + ceilH / 2, z);
-          col.castShadow = true;
-          g.add(col);
-        }
-      }
-    }
-  };
-
-  /**
-   * Builds an enclosed descending subterranean stone-brick stairwell plunging
-   * 6 metres deeper underground (`y0 -> y1`, e.g., `0m -> -6m -> -12m -> -18m`)!
-   */
-  const addDescendingStairwell = (z0: number, z1: number, y0: number, y1: number, sconceColor: string) => {
-    const steps = 18;
-    const stepD = (z1 - z0) / steps;
-    const stepH = (y1 - y0) / steps; // negative for descending!
-    for (let i = 0; i < steps; i++) {
-      const sz = z0 + (i + 0.5) * stepD;
-      const sy = y0 + (i + 0.5) * stepH;
-      const stepMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(hw * 2 - 2, Math.abs(stepH) + 0.45, stepD + 0.18),
-        intactSlabMat,
-      );
-      stepMesh.position.set(cx, sy - 0.2, sz);
-      stepMesh.receiveShadow = true;
-      g.add(stepMesh);
-    }
-    const midY = (y0 + y1) / 2;
-    const midZ = (z0 + z1) / 2;
-    for (const side of [-1, 1]) {
-      const wallX = cx + side * (hw + 0.9);
-      const stairWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 15.0, z1 - z0 + 2.5), wallBrickMat);
-      stairWall.position.set(wallX, midY + 4.0, midZ);
-      g.add(stairWall);
-      colliders.boxes.push({ x: wallX, z: midZ, hw: 0.9, hd: (z1 - z0) / 2 });
-
-      // Guiding torches down the stairwell
-      const torchOrb = new THREE.Mesh(
-        new THREE.ConeGeometry(0.24, 0.52, 6),
-        standard(sconceColor, { emissive: sconceColor, emissiveIntensity: 2.2 }),
-      );
-      torchOrb.position.set(cx + side * (hw - 0.4), midY + 3.4, midZ);
-      g.add(torchOrb);
-    }
-    // Sloped subterranean ceiling over the descending stairwell
-    const stairCeil = new THREE.Mesh(new THREE.BoxGeometry(hw * 2 + 3.2, 1.4, z1 - z0 + 3.0), wallBrickMat);
-    stairCeil.position.set(cx, Math.max(y0, y1) + 6.8, midZ);
-    g.add(stairCeil);
-  };
-
-  // =========================================================================
-  // DEPTH 1 (z = 120..210, y = 0m — ❄️ CRYPT OF THE FROST-FANG)
-  // Contrasting Rooms:
-  // - 1A (z=120..132): Cramped Crypt Entry Vestibule (5.2m ceiling)
-  // - 1B (z=132..172): Grand Sunken Aqueduct Rotunda (9.8m ceiling + colonnade pillars)
-  // - 1C (z=172..189): Narrow Frost-Trap Gauntlet & Lever Chokepoint (5.4m ceiling)
-  // - 1D (z=189..210): Vaulted 3-Chest Mimic Reliquary + West/East Side Treasure Rooms (8.6m ceiling)
-  // =========================================================================
-  addUndergroundChamber({
-    z0: 120,
-    z1: 132,
-    y0: 0,
-    visHalfW: 15.5,
-    ceilH: 5.2,
-    floorMat: iceFloorMat,
-    sconceColor: "#38bdf8",
-  });
-  addUndergroundChamber({
-    z0: 132,
-    z1: 172,
-    y0: 0,
-    visHalfW: 21.5,
-    ceilH: 9.8,
-    floorMat: iceFloorMat,
-    sconceColor: "#38bdf8",
-    addPillars: true,
-  });
-  addUndergroundChamber({
-    z0: 172,
-    z1: 189,
-    y0: 0,
-    visHalfW: 16.5,
-    ceilH: 5.4,
-    floorMat: iceFloorMat,
-    sconceColor: "#38bdf8",
-  });
-  addUndergroundChamber({
-    z0: 189,
-    z1: 210,
-    y0: 0,
-    visHalfW: 19.5,
-    ceilH: 8.6,
-    floorMat: iceFloorMat,
-    sconceColor: "#38bdf8",
-    sideAlcoves: true,
-  });
-
-  // Interior Crypt Entrance Archway at z = 120
-  for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(6.4, 7.2, 2.4), shortWallBrickMat);
-    pillar.position.set(cx + side * 12.2, 3.6, startZ);
-    pillar.castShadow = pillar.receiveShadow = true;
-    g.add(pillar);
-    colliders.boxes.push({ x: cx + side * 12.2, z: startZ, hw: 3.2, hd: 1.2 });
-  }
-
-  // Flooded Subterranean Ice-Water Canal in the Grand Aqueduct Rotunda (z = 132..172)
-  const canalWater = new THREE.Mesh(
-    new THREE.BoxGeometry(20.8, 0.18, 40),
-    standard("#0284c7", { emissive: "#0369a1", emissiveIntensity: 0.65, roughness: 0.2 }),
-  );
-  canalWater.position.set(cx, 0.08, 152);
-  g.add(canalWater);
-
-  // Central Slippery Ice Stepping-Stones across the Flooded Canal (|x| <= 2.9)
-  for (let sz = 134; sz <= 170; sz += 4) {
-    const iceStone = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.5, 0.32, 8), iceCrystalMat);
-    iceStone.position.set(cx, 0.16, sz);
-    g.add(iceStone);
-  }
-
-  // West & East Raised Stone-Brick Side-Walkways (|x| >= 10.8) flanking the canal
-  for (const side of [-1, 1]) {
-    const walkway = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.55, 42), intactSlabMat);
-    walkway.position.set(cx + side * 14.6, 0.28, 152);
-    walkway.receiveShadow = true;
-    g.add(walkway);
-  }
-
-  // Waterfalls pouring from Wall Grates & Dripping Ceiling Icicles at z = 138, 152, 166
-  BRICK_DUNGEON.grateZs.forEach((wz, gi) => {
-    const dripX = cx + (gi % 2 === 1 ? 1 : -1) * BRICK_DUNGEON.grateDripX;
-    const waterfallCurtain = new THREE.Mesh(
-      new THREE.BoxGeometry(BRICK_DUNGEON.grateDripHalfW * 2, 8.8, 0.55),
-      new THREE.MeshBasicMaterial({ color: "#7dd3fc", transparent: true, opacity: 0.42 }),
-    );
-    waterfallCurtain.position.set(dripX, 4.4, wz);
-    g.add(waterfallCurtain);
-
-    for (let ix = -8; ix <= 8; ix += 4) {
-      const icicle = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.5, 6), iceCrystalMat);
-      icicle.rotation.x = Math.PI;
-      icicle.position.set(cx + ix, 8.8, wz);
-      g.add(icicle);
-    }
-  });
-
-  // Cracked Frost-Slab Booby Traps
-  const slabPairs: Array<{ left: THREE.Mesh; right: THREE.Mesh; rowIdx: number }> = [];
-  const slabGeo = new THREE.BoxGeometry(BRICK_DUNGEON.slabHalfW * 2, 0.16, BRICK_DUNGEON.slabHalfD * 2);
-  BRICK_DUNGEON.slabRowZs.forEach((rz, rIdx) => {
-    const leftSlab = new THREE.Mesh(slabGeo, crackedSlabMat);
-    leftSlab.position.set(cx - BRICK_DUNGEON.slabCenterX, 0.08, rz);
-    const rightSlab = new THREE.Mesh(slabGeo, intactSlabMat);
-    rightSlab.position.set(cx + BRICK_DUNGEON.slabCenterX, 0.08, rz);
-    g.add(leftSlab, rightSlab);
-    slabPairs.push({ left: leftSlab, right: rightSlab, rowIdx: rIdx });
-  });
-
-  // Sweeping Frost-Arrow Volley Bar
-  const arrowVolleyGroup = new THREE.Group();
-  for (const ax of [-3.6, -1.8, 0, 1.8, 3.6]) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 6), iceCrystalMat);
-    shaft.rotation.x = Math.PI / 2;
-    shaft.position.set(ax, 1.3, 0);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.28, 6), iceCrystalMat);
-    tip.rotation.x = -Math.PI / 2;
-    tip.position.set(ax, 1.3, -0.78);
-    arrowVolleyGroup.add(shaft, tip);
-  }
-  arrowVolleyGroup.position.set(cx, 0, BRICK_DUNGEON.hall1EndZ);
-  g.add(arrowVolleyGroup);
-
-  // T-Junction Iron Wall Levers & Shifting Brick Partition at z = 186..190
-  const leverBaseGeo = new THREE.BoxGeometry(0.5, 0.5, 0.4);
-  const leverRodGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 8);
-  const leverWestBase = new THREE.Mesh(leverBaseGeo, ironMat);
-  leverWestBase.position.set(cx - 5.2, 0.25, BRICK_DUNGEON.junctionZ);
-  const leverWestRod = new THREE.Mesh(leverRodGeo, iceCrystalMat);
-  leverWestRod.position.set(cx - 5.2, 0.8, BRICK_DUNGEON.junctionZ);
-
-  const leverEastBase = new THREE.Mesh(leverBaseGeo, ironMat);
-  leverEastBase.position.set(cx + 5.2, 0.25, BRICK_DUNGEON.junctionZ);
-  const leverEastRod = new THREE.Mesh(
-    leverRodGeo,
-    standard("#f59e0b", { emissive: "#d97706", emissiveIntensity: 1.1 }),
-  );
-  leverEastRod.position.set(cx + 5.2, 0.8, BRICK_DUNGEON.junctionZ);
-  g.add(leverWestBase, leverWestRod, leverEastBase, leverEastRod);
-
-  const partitionW = BRICK_DUNGEON.partitionOuterX - BRICK_DUNGEON.partitionInnerX;
-  const partitionCenterOffset = BRICK_DUNGEON.partitionInnerX + partitionW / 2;
-  const shiftingBrickWall = new THREE.Mesh(
-    new THREE.BoxGeometry(partitionW, 6.2, BRICK_DUNGEON.partitionHalfD * 2),
-    shortWallBrickMat,
-  );
-  shiftingBrickWall.position.set(cx + partitionCenterOffset, 3.1, BRICK_DUNGEON.partitionZ);
-  g.add(shiftingBrickWall);
-
-  // 3-Chest Frost Mimic Reliquary at z = 201.5 & Secret Sliding Brick Bookcase at z = 210
-  const chestEntries: Array<{
-    lidGroup: THREE.Group;
-    teethGroup: THREE.Group;
-    tongueMesh: THREE.Mesh;
-  }> = [];
-  const chestXPositions = BRICK_DUNGEON.chestXs.map((x) => cx + x);
-
-  chestXPositions.forEach((chX) => {
-    const chestGroup = new THREE.Group();
-    chestGroup.position.set(chX, 0, BRICK_DUNGEON.chestZ);
-
-    const dais = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.28, 2.2), intactSlabMat);
-    dais.position.y = 0.14;
-    chestGroup.add(dais);
-
-    const baseBox = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.78, 1.2), chestWoodMat);
-    baseBox.position.y = 0.66;
-    const goldBand = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.8, 0.24), goldMat);
-    goldBand.position.y = 0.66;
-    chestGroup.add(baseBox, goldBand);
-
-    const lidGroup = new THREE.Group();
-    lidGroup.position.set(0, 1.04, -0.58);
-    const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.46, 1.2), chestWoodMat);
-    lidMesh.position.set(0, 0.23, 0.58);
-    const lockPlate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.14), goldMat);
-    lockPlate.position.set(0, 0.1, 1.18);
-    lidGroup.add(lidMesh, lockPlate);
-    chestGroup.add(lidGroup);
-
-    const teethGroup = new THREE.Group();
-    teethGroup.position.set(0, 1.0, 0);
-    const fangMat = standard("#f8fafc");
-    for (const fx of [-0.6, -0.3, 0, 0.3, 0.6]) {
-      const topFang = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.26, 5), fangMat);
-      topFang.rotation.x = Math.PI;
-      topFang.position.set(fx, 0.18, 0.48);
-      const botFang = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.24, 5), fangMat);
-      botFang.position.set(fx, -0.05, 0.48);
-      teethGroup.add(topFang, botFang);
-    }
-    const tongueMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.44, 0.12, 1.0),
-      standard("#e11d48", { emissive: "#be123c", emissiveIntensity: 0.7 }),
-    );
-    tongueMesh.position.set(0, 0.05, 0.48);
-    teethGroup.add(tongueMesh);
-    teethGroup.visible = false;
-    chestGroup.add(teethGroup);
-
-    g.add(chestGroup);
-    chestEntries.push({ lidGroup, teethGroup, tongueMesh });
-  });
-
-  const secretBookcaseWall = new THREE.Group();
-  secretBookcaseWall.position.set(cx, 0, BRICK_DUNGEON.secretWallZ);
-  const bookcaseBacking = new THREE.Mesh(new THREE.BoxGeometry(hw * 2, 6.2, 1.2), shortWallBrickMat);
-  bookcaseBacking.position.y = 3.1;
-  secretBookcaseWall.add(bookcaseBacking);
-  const shelfColors = ["#dc2626", "#2563eb", "#16a34a", "#d97706", "#9333ea"];
-  for (const sy of [1.3, 2.6, 3.9]) {
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.18, 1.35), chestWoodMat);
-    shelf.position.y = sy;
-    secretBookcaseWall.add(shelf);
-    for (let b = -4; b <= 4; b++) {
-      const book = new THREE.Mesh(
-        new THREE.BoxGeometry(0.55, 0.82, 1.3),
-        standard(shelfColors[Math.abs(b + Math.round(sy)) % shelfColors.length]!),
-      );
-      book.position.set(b * 1.05, sy + 0.48, 0);
-      secretBookcaseWall.add(book);
-    }
-  }
-  g.add(secretBookcaseWall);
-
-  // DESCENDING STAIRWELL 1 -> 2 (z = 210..226, plunging y = 0m -> -6.0m underground!)
-  addDescendingStairwell(
-    BRICK_DUNGEON.stairs1StartZ,
-    BRICK_DUNGEON.stairs1EndZ,
-    0,
-    BRICK_DUNGEON.floor2Y,
-    "#38bdf8",
-  );
-
-  // =========================================================================
-  // DEPTH 2 (z = 226..316, y = -6.0m — 🔥 CINDER-WEB CATACOMBS & MOLTEN FORGE)
-  // Contrasting Rooms:
-  // - 2A (z=226..258): Tight Cinder-Web Catacomb Tunnels & Side Galleries (5.5m ceiling)
-  // - 2B (z=258..296): Colossal Subterranean Molten Forge Rotunda (10.5m ceiling + anvil pillars)
-  // - 2C (z=296..316): Narrow Magma Boulder Chute (5.6m ceiling)
-  // =========================================================================
-  const y2 = BRICK_DUNGEON.floor2Y;
-  addUndergroundChamber({
-    z0: 226,
-    z1: 258,
-    y0: y2,
-    visHalfW: 17.5,
-    ceilH: 5.5,
-    floorMat: fireFloorMat,
-    sconceColor: "#f97316",
-  });
-  addUndergroundChamber({
-    z0: 258,
-    z1: 296,
-    y0: y2,
-    visHalfW: 22.5,
-    ceilH: 10.5,
-    floorMat: fireFloorMat,
-    sconceColor: "#f97316",
-    addPillars: true,
-    sideAlcoves: true,
-  });
-  addUndergroundChamber({
-    z0: 296,
-    z1: 316,
-    y0: y2,
-    visHalfW: 16.0,
-    ceilH: 5.6,
-    floorMat: fireFloorMat,
-    sconceColor: "#f97316",
-  });
-
-  // Glowing Magma Side Trenches & West/East Raised Stone-Brick Galleries
-  for (const side of [-1, 1]) {
-    const lavaStrip = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.16, 84), magmaMat);
-    lavaStrip.position.set(cx + side * 8.6, y2 + 0.08, 271);
-    g.add(lavaStrip);
-
-    const sideGallery = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.4, 84), intactSlabMat);
-    sideGallery.position.set(cx + side * 14.5, y2 + 0.2, 271);
-    g.add(sideGallery);
-  }
-
-  // 3 Sticky Cinder-Spider Web Curtains at z = 238, 256, 274 (burnable with Torch!)
-  const webZPositions = [BRICK_DUNGEON.web1Z, BRICK_DUNGEON.web2Z, BRICK_DUNGEON.web3Z];
-  const webMeshes: THREE.Group[] = [];
-  const webMat = new THREE.MeshBasicMaterial({
-    color: "#e2e8f0",
-    transparent: true,
-    opacity: 0.58,
-    side: THREE.DoubleSide,
-  });
-  webZPositions.forEach((wz) => {
-    const webGroup = new THREE.Group();
-    webGroup.position.set(cx, y2, wz);
-    const mainSheet = new THREE.Mesh(new THREE.PlaneGeometry(BRICK_DUNGEON.webHalfW * 2, 5.4), webMat);
-    mainSheet.position.y = 2.7;
-    webGroup.add(mainSheet);
-    for (let a = 0; a < 6; a++) {
-      const strand = new THREE.Mesh(new THREE.BoxGeometry(BRICK_DUNGEON.webHalfW * 2 + 0.6, 0.08, 0.08), webMat);
-      strand.position.y = 2.8;
-      strand.rotation.z = (a / 6) * Math.PI;
-      webGroup.add(strand);
-    }
-    g.add(webGroup);
-    webMeshes.push(webGroup);
-  });
-
-  // 3 Swinging Molten Pendulum Scythe Blades in the Molten Forge Rotunda at z = 262, 278, 294
-  const pendulumZPositions = [BRICK_DUNGEON.pendulum1Z, BRICK_DUNGEON.pendulum2Z, BRICK_DUNGEON.pendulum3Z];
-  const pendulumPivots: THREE.Group[] = [];
-  pendulumZPositions.forEach((pz) => {
-    const pivot = new THREE.Group();
-    pivot.position.set(cx, y2 + 6.2, pz);
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.8, 8), ironMat);
-    rod.position.y = -2.4;
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.3, 0.22), magmaMat);
-    blade.position.y = -4.6;
-    pivot.add(rod, blade);
-    g.add(pivot);
-    pendulumPivots.push(pivot);
-  });
-
-  // Rolling Fire-Boulder in the Central Groove (z = 280..314)
-  const fireBoulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(BRICK_DUNGEON.boulderRadius, 1), magmaMat);
-  fireBoulderMesh.position.set(cx, y2 + BRICK_DUNGEON.boulderRadius, BRICK_DUNGEON.boulderEndZ);
-  fireBoulderMesh.castShadow = true;
-  g.add(fireBoulderMesh);
-
-  // DESCENDING STAIRWELL 2 -> 3 (z = 316..332, plunging y = -6.0m -> -12.0m underground!)
-  addDescendingStairwell(
-    BRICK_DUNGEON.stairs2StartZ,
-    BRICK_DUNGEON.stairs2EndZ,
-    BRICK_DUNGEON.floor2Y,
-    BRICK_DUNGEON.floor3Y,
-    "#f97316",
-  );
-
-  // =========================================================================
-  // DEPTH 3 (z = 332..404, y = -12.0m — 🌑 ABYSSAL SHADOW CHASM & TWIN IRON GAOL)
-  // Contrasting Rooms:
-  // - 3A (z=332..370): Vast Subterranean Shadow Chasm Cavern (11.2m ceiling + amethyst crystal spires)
-  // - 3B (z=370..404): Cramped Twin Iron-Bar Gaol Cells & Portcullis Switches (5.6m ceiling)
-  // =========================================================================
-  const y3 = BRICK_DUNGEON.floor3Y;
-  addUndergroundChamber({
-    z0: 332,
-    z1: 340,
-    y0: y3,
-    visHalfW: 19.5,
-    ceilH: 8.5,
-    floorMat: shadowFloorMat,
-    sconceColor: "#a855f7",
-    hasFloor: true,
-  });
-  addUndergroundChamber({
-    z0: 340,
-    z1: 368,
-    y0: y3,
-    visHalfW: 22.0,
-    ceilH: 11.2,
-    floorMat: shadowFloorMat,
-    sconceColor: "#a855f7",
-    hasFloor: false,
-  });
-  addUndergroundChamber({
-    z0: 368,
-    z1: 404,
-    y0: y3,
-    visHalfW: 17.5,
-    ceilH: 5.6,
-    floorMat: shadowFloorMat,
-    sconceColor: "#a855f7",
-    hasFloor: true,
-    sideAlcoves: true,
-  });
-
-  // Bottomless Shadow-Mana Chasm (z = 340..368) with Glowing Amethyst Spires, Central Bridge & Outer Catwalks
-  const chasmVoid = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2 + 8, 28), shadowVoidMat);
-  chasmVoid.rotation.x = -Math.PI / 2;
-  chasmVoid.position.set(cx, y3 - 4.2, 354);
-  g.add(chasmVoid);
-
-  for (const [sx, sz, sh] of [
-    [-7.2, 346, 5.2],
-    [7.4, 351, 6.0],
-    [-6.8, 361, 5.6],
-    [6.9, 364, 4.8],
-  ] as const) {
-    const spire = new THREE.Mesh(new THREE.ConeGeometry(1.1, sh, 6), amethystMat);
-    spire.position.set(cx + sx, y3 - 4.2 + sh / 2, sz);
-    g.add(spire);
-  }
-
-  const centralBridge = new THREE.Mesh(new THREE.BoxGeometry(BRICK_DUNGEON.chasmBridgeHalfW * 2, 0.45, 29), intactSlabMat);
-  centralBridge.position.set(cx, y3 + 0.15, 354);
-  centralBridge.receiveShadow = true;
-  g.add(centralBridge);
-
-  for (const side of [-1, 1]) {
-    const outerCatwalk = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.45, 29), intactSlabMat);
-    outerCatwalk.position.set(cx + side * 14.6, y3 + 0.15, 354);
-    outerCatwalk.receiveShadow = true;
-    g.add(outerCatwalk);
-  }
-
-  // Parallel Iron-Bar Gaol Corridors (z = 372..392), Loose Brick Switches (z = 382) & Portcullis Gates (z = 388)
-  for (let z = BRICK_DUNGEON.ironBarsStartZ; z <= BRICK_DUNGEON.ironBarsEndZ; z += 1.4) {
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5.6, 8), ironMat);
-    bar.position.set(cx, y3 + 2.8, z);
-    g.add(bar);
-  }
-  colliders.boxes.push({
-    x: cx,
-    z: (BRICK_DUNGEON.ironBarsStartZ + BRICK_DUNGEON.ironBarsEndZ) / 2,
-    hw: BRICK_DUNGEON.ironBarsHalfW,
-    hd: (BRICK_DUNGEON.ironBarsEndZ - BRICK_DUNGEON.ironBarsStartZ) / 2,
-  });
-
-  const switchMat = standard("#a855f7", { emissive: "#9333ea", emissiveIntensity: 1.2 });
-  const looseBrickWest = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.95), switchMat);
-  looseBrickWest.position.set(cx - 17.0, y3 + 1.6, BRICK_DUNGEON.switchZ);
-  const looseBrickEast = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.65, 0.95), switchMat);
-  looseBrickEast.position.set(cx + 17.0, y3 + 1.6, BRICK_DUNGEON.switchZ);
-  g.add(looseBrickWest, looseBrickEast);
-
-  const gateW = hw - BRICK_DUNGEON.gateInnerX;
-  const gateCenterOffset = BRICK_DUNGEON.gateInnerX + gateW / 2;
-  const buildPortcullis = (gateCenterX: number) => {
-    const gateGroup = new THREE.Group();
-    gateGroup.position.set(gateCenterX, y3, BRICK_DUNGEON.gateZ);
-    const topBeam = new THREE.Mesh(new THREE.BoxGeometry(gateW, 0.38, 0.38), ironMat);
-    topBeam.position.y = 5.4;
-    const midBeam = new THREE.Mesh(new THREE.BoxGeometry(gateW, 0.3, 0.38), ironMat);
-    midBeam.position.y = 2.7;
-    gateGroup.add(topBeam, midBeam);
-    for (let bx = -gateW / 2 + 0.5; bx <= gateW / 2 - 0.5; bx += 1.15) {
-      const vBar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 5.5, 8), ironMat);
-      vBar.position.set(bx, 2.75, 0);
-      gateGroup.add(vBar);
-    }
-    g.add(gateGroup);
-    return gateGroup;
-  };
-  const leftPortcullis = buildPortcullis(cx - gateCenterOffset);
-  const rightPortcullis = buildPortcullis(cx + gateCenterOffset);
-
-  // DESCENDING STAIRWELL 3 -> 4 (z = 404..420, plunging y = -12.0m -> -18.0m underground!)
-  addDescendingStairwell(
-    BRICK_DUNGEON.stairs3StartZ,
-    BRICK_DUNGEON.stairs3EndZ,
-    BRICK_DUNGEON.floor3Y,
-    BRICK_DUNGEON.floor4Y,
-    "#a855f7",
-  );
-
-  // =========================================================================
-  // DEPTH 4 (z = 420..480, y = -18.0m — 👑 SUBTERRANEAN CATHEDRAL OF THE 3-FACED DIRE WOLF)
-  // Contrasting Rooms:
-  // - 4A (z=420..432): Narrow Ritual Antechamber (5.6m ceiling)
-  // - 4B (z=432..480): Colossal Underground Boss Cathedral (46m wide, 11.6m ceiling + columns)
-  // =========================================================================
-  const y4 = BRICK_DUNGEON.floor4Y;
-  addUndergroundChamber({
-    z0: 420,
-    z1: 432,
-    y0: y4,
-    visHalfW: 15.0,
-    ceilH: 5.6,
-    floorMat: bossFloorMat,
-    sconceColor: "#fbbf24",
-    colliderHalfW: bossHw,
-  });
-  addUndergroundChamber({
-    z0: 432,
-    z1: 480,
-    y0: y4,
-    visHalfW: bossHw,
-    ceilH: 11.6,
-    floorMat: bossFloorMat,
-    sconceColor: "#fbbf24",
-    addPillars: true,
-    sideAlcoves: true,
-    colliderHalfW: bossHw,
-  });
-
-  const backWall = new THREE.Mesh(new THREE.BoxGeometry(bossHw * 2 + 3.2, 11.8, 1.8), shortWallBrickMat);
-  backWall.position.set(cx, y4 + 5.9, endZ + 0.9);
-  g.add(backWall);
-  colliders.boxes.push({ x: cx, z: endZ + 0.9, hw: bossHw + 1.6, hd: 0.95 });
-
-  // 3 Elemental Rune Circles on the Subterranean Cathedral Floor (❄️ Frost, 🔥 Fire, 🌑 Shadow)
-  const runeSpecs: Array<[number, string]> = [
-    [-9.5, "#38bdf8"],
-    [0, "#f97316"],
-    [9.5, "#a855f7"],
-  ];
-  for (const [rx, rCol] of runeSpecs) {
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(3.4, 3.9, 32),
-      new THREE.MeshBasicMaterial({ color: rCol, side: THREE.DoubleSide }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(cx + rx, y4 + 0.05, BRICK_DUNGEON.bossHomeZ);
-    g.add(ring);
-  }
-
-  // Golden Royal Vault Dais & Chest at z = 470
-  const vaultDais = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.55, 6.5), intactSlabMat);
-  vaultDais.position.set(cx, y4 + 0.28, BRICK_DUNGEON.vaultChestZ);
-  g.add(vaultDais);
-
-  const royalVaultChest = new THREE.Group();
-  royalVaultChest.position.set(cx, y4 + 0.55, BRICK_DUNGEON.vaultChestZ);
-  const vBox = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.45, 2.0), goldMat);
-  vBox.position.y = 0.72;
-  vBox.castShadow = true;
-  const vGem = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.6, 0),
-    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 2.2 }),
-  );
-  vGem.position.set(0, 1.95, 0);
-  royalVaultChest.add(vBox, vGem);
-  g.add(royalVaultChest);
-
-  // Abyssal Geyser Return Portal at z = 476 (launches players from -18m back up to Depth 1!)
-  const escapeArch = new THREE.Mesh(
-    new THREE.TorusGeometry(2.4, 0.28, 10, 24),
-    standard("#38bdf8", { emissive: "#0284c7", emissiveIntensity: 1.5 }),
-  );
-  escapeArch.position.set(cx, y4 + 2.4, BRICK_DUNGEON.escapeSlideZ);
-  g.add(escapeArch);
-
-  scene.add(g);
-
-  return {
-    group: g,
-    update(view: DungeonView) {
-      const {
-        dungeonWing,
-        dungeonSeed,
-        grimoireFound,
-        gateLeftOpen,
-        gateRightOpen,
-        vaultUnlocked,
-        arrowVolleyZ,
-        chompingChests,
-        websBurned,
-        fireBoulderZ,
-        nowMs,
-      } = view;
-      const tSec = nowMs / 1000;
-
-      // 1. Depth 1 Cracked vs Intact Frost Slabs
-      for (const pair of slabPairs) {
-        const crackedOnLeft = (pair.rowIdx + dungeonSeed) % 2 === 0;
-        pair.left.material = crackedOnLeft ? crackedSlabMat : intactSlabMat;
-        pair.right.material = crackedOnLeft ? intactSlabMat : crackedSlabMat;
-      }
-
-      // 2. Depth 1 Arrow Volley
-      if (Number.isFinite(arrowVolleyZ)) {
-        arrowVolleyGroup.position.z = arrowVolleyZ;
-      }
-
-      // 3. Depth 1 T-Junction Shifting Brick Wall
-      const targetWallX = dungeonWing === 1 ? cx + partitionCenterOffset : cx - partitionCenterOffset;
-      shiftingBrickWall.position.x += (targetWallX - shiftingBrickWall.position.x) * 0.14;
-      leverWestRod.rotation.x = dungeonWing === 1 ? -0.45 : 0.45;
-      leverEastRod.rotation.x = dungeonWing === 2 ? -0.45 : 0.45;
-
-      // 4. Depth 1 Mimic Chests & Secret Bookcase Wall
-      const realChestIdx = dungeonSeed % 3;
-      chestEntries.forEach((entry, idx) => {
-        const isReal = idx === realChestIdx;
-        if (isReal && grimoireFound === 1) {
-          entry.lidGroup.rotation.x += (-1.15 - entry.lidGroup.rotation.x) * 0.15;
-          entry.teethGroup.visible = false;
-        } else if (!isReal && (chompingChests & (1 << idx)) !== 0) {
-          entry.lidGroup.rotation.x = -0.85 + Math.sin(tSec * 16) * 0.32;
-          entry.teethGroup.visible = true;
-          entry.tongueMesh.rotation.y = Math.sin(tSec * 14) * 0.35;
-        } else {
-          entry.lidGroup.rotation.x += (0 - entry.lidGroup.rotation.x) * 0.15;
-          entry.teethGroup.visible = false;
-        }
-      });
-
-      const bookcaseTargetX = grimoireFound === 1 ? cx + 16.5 : cx;
-      secretBookcaseWall.position.x += (bookcaseTargetX - secretBookcaseWall.position.x) * 0.1;
-
-      // 5. Depth 2 Burnable Spiderweb Curtains, Swinging Molten Pendulums & Rolling Fire-Boulder
-      webMeshes.forEach((wm, idx) => {
-        const bit = 1 << idx;
-        wm.visible = (websBurned & bit) === 0;
-      });
-      pendulumPivots.forEach((piv, idx) => {
-        const dir = idx % 2 === 0 ? 1 : -1;
-        piv.rotation.z = Math.sin(tSec * 2.4 + idx) * 0.65 * dir;
-      });
-      if (Number.isFinite(fireBoulderZ)) {
-        fireBoulderMesh.position.z = fireBoulderZ;
-        fireBoulderMesh.rotation.x -= 0.14;
-      }
-
-      // 6. Depth 3 Parallel Iron Portcullis Gates
-      const leftGateY = y3 + (gateLeftOpen === 1 ? 5.2 : 0);
-      const rightGateY = y3 + (gateRightOpen === 1 ? 5.2 : 0);
-      leftPortcullis.position.y += (leftGateY - leftPortcullis.position.y) * 0.14;
-      rightPortcullis.position.y += (rightGateY - rightPortcullis.position.y) * 0.14;
-
-      // 7. Depth 4 Royal Vault Gem & Abyssal Geyser Portal
-      vGem.rotation.y = tSec * 1.8;
-      vGem.position.y = 1.95 + (vaultUnlocked === 1 ? 0.55 : 0) + Math.sin(tSec * 3) * 0.14;
-      escapeArch.rotation.z = tSec * 1.2;
-    },
-  };
-}
+// Underground dungeon is lazy-loaded from ./dungeon when entering the Haunted Gate.
 
 /**
  * Pure 3D low-poly forest animal, slithering snake, Giant Ember Spider,
@@ -2934,11 +2056,11 @@ function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {
     if (Math.abs(x - FOOTBALL_STADIUM.centerX) < 26 && Math.abs(z) < 20) continue;
     if (x > ARCADE_HALL.minX - 3 && x < ARCADE_HALL.maxX + 3 && z > ARCADE_HALL.minZ - 3 && z < ARCADE_HALL.maxZ + 3) continue;
     if (Math.hypot(x - CAMPFIRE_BASE.x, z - CAMPFIRE_BASE.z) < 14.5) continue;
-    if (Math.abs(x) < 5.8 && z >= 68 && z <= BRICK_DUNGEON.startZ + 2) continue;
+    if (Math.abs(x) < 5.8 && z >= 68 && z <= HAUNTED_GATE.z + 2) continue;
     if (
-      Math.abs(x - BRICK_DUNGEON.centerX) < BRICK_DUNGEON.halfW + 9 &&
-      z > BRICK_DUNGEON.startZ - 8 &&
-      z < BRICK_DUNGEON.endZ + 12
+      Math.abs(x - HAUNTED_GATE.x) < 22 &&
+      z > HAUNTED_GATE.z - 8 &&
+      z < HAUNTED_GATE.z + 12
     ) {
       continue;
     }
