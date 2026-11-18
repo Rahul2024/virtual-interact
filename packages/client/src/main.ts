@@ -860,15 +860,37 @@ async function main() {
   }
 }
 
-function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions, myId: string): Promise<string> {
+interface RestoredPlayerState {
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+  seatId: number;
+  tool: ToolId;
+}
+
+function runSession(
+  room: HubRoom,
+  callbacks: HubCallbacks,
+  options: JoinOptions,
+  myId: string,
+  restoredState?: RestoredPlayerState,
+): Promise<string> {
   return new Promise((resolve) => {
     const remotes = new Map<string, Remote>();
     const friends = new Set<string>();
     const me = new Avatar(options.name || "You", options.color, true);
-    me.position.set(0, 0, 8);
-    controls.distance = 7;
-    controls.pitch = 0.35;
-    controls.yaw = Math.PI;
+    if (restoredState) {
+      me.position.set(restoredState.x, restoredState.y, restoredState.z);
+      me.rot = restoredState.rot;
+      me.seatId = restoredState.seatId;
+      me.setTool(restoredState.tool);
+    } else {
+      me.position.set(0, 0, 8);
+      controls.distance = 7;
+      controls.pitch = 0.35;
+      controls.yaw = Math.PI;
+    }
     world.scene.add(me.group);
 
     const isPeerFriend = (peerSessionId: string): boolean => {
@@ -1026,17 +1048,48 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
       const initSeat = player.seatId >= 0 ? CINEMA_SEATS[player.seatId] : undefined;
       const initY = initSeat ? (initSeat.y ?? 0) : getWorldFloorY(player.x, player.z);
       if (id === room.sessionId) {
-        me.position.set(player.x, initY, player.z);
-        me.rot = player.rot;
-        me.seatId = player.seatId;
+        if (restoredState) {
+          me.position.set(restoredState.x, restoredState.y, restoredState.z);
+          me.rot = restoredState.rot;
+          me.seatId = restoredState.seatId;
+          me.setTool(restoredState.tool);
+          s.sentHistory.push({
+            x: restoredState.x,
+            z: restoredState.z,
+            rot: restoredState.rot,
+            anim: me.anim,
+            at: performance.now(),
+          });
+          s.sendAccumulator = 1;
+          try {
+            room.send(MSG.move, {
+              x: restoredState.x,
+              z: restoredState.z,
+              rot: restoredState.rot,
+              anim: me.anim,
+            });
+            if (restoredState.seatId >= 0) {
+              room.send(MSG.seat, { seatId: restoredState.seatId });
+            }
+            if (restoredState.tool !== TOOL.none) {
+              room.send(FOREST_MSG.equipTool, { tool: restoredState.tool });
+            }
+          } catch {
+            /* ignore */
+          }
+        } else {
+          me.position.set(player.x, initY, player.z);
+          me.rot = player.rot;
+          me.seatId = player.seatId;
+          me.setTool(player.tool as ToolId);
+          controls.yaw = player.rot + Math.PI;
+        }
         me.mimicTrapped = player.mimicTrapped ?? 0;
-        me.setTool(player.tool as ToolId);
         me.setTeam(player.team as TeamId);
         me.setName(player.name);
         s.rawMeat = player.rawMeat;
         s.cookedMeat = player.cookedMeat;
         s.energy = player.energy;
-        controls.yaw = player.rot + Math.PI;
         callbacks.onChange(player, () => {
           me.seatId = player.seatId;
           me.mimicTrapped = player.mimicTrapped ?? 0;
@@ -1209,35 +1262,97 @@ function runSession(room: HubRoom, callbacks: HubCallbacks, options: JoinOptions
     };
 
     let reconnectingNoticed = false;
+    let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    let rejoiningInPlace = false;
+
+    const clearFallbackTimer = () => {
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = undefined;
+      }
+    };
+
+    const triggerSeamlessRejoin = async () => {
+      if (rejoiningInPlace || !session) return;
+      rejoiningInPlace = true;
+      clearFallbackTimer();
+      const savedPos: RestoredPlayerState = {
+        x: me.position.x,
+        y: me.position.y,
+        z: me.position.z,
+        rot: me.rot,
+        seatId: me.seatId,
+        tool: me.tool,
+      };
+      try {
+        room.reconnection.enabled = false;
+        void room.leave(false).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+      try {
+        await waitForServer(() => {}, 25_000);
+        const fresh = await joinHub(options);
+        if (!session) return;
+        end("__SEAMLESS_REJOIN__");
+        const nextPromise = runSession(fresh.room, fresh.callbacks, options, fresh.myId, savedPos);
+        hud.addSystem("✅ Connected!");
+        const nextReason = await nextPromise;
+        if (nextReason !== "__SEAMLESS_REJOIN__") {
+          resolve(nextReason);
+        }
+      } catch {
+        rejoiningInPlace = false;
+        end("Connection lost. Click Enter to rejoin.");
+      }
+    };
+
     room.onDrop(() => {
       if (!reconnectingNoticed) {
         reconnectingNoticed = true;
         hud.addSystem("⚠️ Connection hiccup — reconnecting…");
       }
+      clearFallbackTimer();
+      fallbackTimer = setTimeout(() => {
+        if (reconnectingNoticed && !room.connection?.isOpen) {
+          void triggerSeamlessRejoin();
+        }
+      }, 4500);
     });
     room.onReconnect(() => {
+      clearFallbackTimer();
       reconnectingNoticed = false;
-      hud.addSystem("✅ Reconnected!");
+      hud.addSystem("✅ Connected!");
       try {
-        if (room.connection?.isOpen) room.send(MSG.heartbeat);
+        if (room.connection?.isOpen) {
+          room.send(MSG.heartbeat);
+          room.send(MSG.move, { x: me.position.x, z: me.position.z, rot: me.rot, anim: me.anim });
+        }
       } catch {
         /* ignore */
       }
     });
     room.onError((code, message) => {
       console.error("room error", code, message);
-      if (code === 524 || message?.includes("failed to reconnect")) {
-        room.reconnection.enabled = false;
-        void room.leave(false).catch(() => {});
+      if (code === 524 || message?.includes("failed to reconnect") || message?.includes("already consumed")) {
+        void triggerSeamlessRejoin();
         return;
       }
       hud.addSystem(`Connection problem: ${message ?? code}`);
     });
-    room.onLeave((code) =>
-      end(code === 1000 || code === 4000 ? "You left the hub." : `Disconnected from the hub (code ${code}).`),
-    );
+    room.onLeave((code) => {
+      clearFallbackTimer();
+      if (rejoiningInPlace) return;
+      if (code !== 1000 && code !== 4000 && code !== CLOSE.kicked && code !== CLOSE.banned && code !== CLOSE.replaced) {
+        void triggerSeamlessRejoin();
+        return;
+      }
+      end(code === 1000 || code === 4000 ? "You left the hub." : `Disconnected from the hub (code ${code}).`);
+    });
 
-    hud.addSystem("Welcome. WASD to walk, Shift to run, Enter to chat, M to turn on your mic.");
+    if (!restoredState) {
+      hud.addSystem("Welcome. WASD to walk, Shift to run, Enter to chat, M to turn on your mic.");
+    }
   });
 }
 
@@ -1508,9 +1623,17 @@ function stepLocal(s: Session, dt: number, now: number) {
   }
   const wasInDungeon = isInBrickDungeon(s.me.position.x, s.me.position.z);
   if (!wasInDungeon && isAtHauntedGatePortal(s.me.position.x, s.me.position.z)) {
-    s.me.position.set(BRICK_DUNGEON.centerX, 0, BRICK_DUNGEON.startZ + 3.5);
+    s.me.position.set(BRICK_DUNGEON.centerX, 0, BRICK_DUNGEON.startZ + 4.5);
+    s.me.rot = 0;
+    controls.yaw = Math.PI;
+    s.sentHistory.length = 0;
+    s.sendAccumulator = 1;
   } else if (wasInDungeon && isAtDungeonExitPortal(s.me.position.x, s.me.position.z)) {
     s.me.position.set(HAUNTED_GATE.exitX, 0, HAUNTED_GATE.exitZ);
+    s.me.rot = Math.PI;
+    controls.yaw = 0;
+    s.sentHistory.length = 0;
+    s.sendAccumulator = 1;
   }
   const activeColliders = isInBrickDungeon(s.me.position.x, s.me.position.z) ? world.dungeonColliders : world.colliders;
   activeColliders.resolve(s.me.position, PLAYER.radius);

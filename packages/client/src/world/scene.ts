@@ -19,7 +19,7 @@ import {
 import { Colliders } from "./collision";
 import { addArcadeHall } from "./arcadeHall";
 import type { PokerTableView } from "./pokerTable";
-import type { DungeonRig, DungeonView } from "./dungeon";
+import { createBrickDungeon, type DungeonRig, type DungeonView } from "./dungeon";
 
 export type { DungeonView };
 export type TimeMode = "ist" | "day" | "sunset" | "night";
@@ -351,25 +351,14 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   const hauntedCastle = addHauntedCastleGatehouse(scene, colliders);
 
   let dungeonRig: DungeonRig | null = null;
-  let dungeonLoading = false;
   let lastDungeonView: DungeonView | null = null;
 
   const ensureDungeonLoaded = () => {
-    if (dungeonRig || dungeonLoading) return;
-    dungeonLoading = true;
-    void import("./dungeon")
-      .then(({ createBrickDungeon }) => {
-        dungeonRig = createBrickDungeon(scene);
-        dungeonColliders.boxes.push(...dungeonRig.colliders.boxes);
-        dungeonColliders.circles.push(...dungeonRig.colliders.circles);
-        if (lastDungeonView) dungeonRig.update(lastDungeonView);
-      })
-      .catch((err) => {
-        console.error("Failed to lazy-load dungeon:", err);
-      })
-      .finally(() => {
-        dungeonLoading = false;
-      });
+    if (dungeonRig) return;
+    dungeonRig = createBrickDungeon(scene);
+    dungeonColliders.boxes.push(...dungeonRig.colliders.boxes);
+    dungeonColliders.circles.push(...dungeonRig.colliders.circles);
+    if (lastDungeonView) dungeonRig.update(lastDungeonView);
   };
 
   const unloadDungeon = () => {

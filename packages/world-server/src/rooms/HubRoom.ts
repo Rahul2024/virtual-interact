@@ -817,9 +817,33 @@ export class HubRoom extends Room<{ state: HubState }> {
     player.clientId = clientId;
 
     // One body per browser: a rejoin (reload, network blip, phone waking up)
-    // replaces the previous session instead of standing next to it.
+    // replaces the previous session instead of standing next to it, preserving position & inventory.
+    let prevState:
+      | {
+          x: number;
+          z: number;
+          rot: number;
+          seatId: number;
+          tool: number;
+          team: number;
+          rawMeat: number;
+          cookedMeat: number;
+          energy: number;
+        }
+      | undefined;
     for (const [sid, other] of this.state.players.entries()) {
       if (sid !== client.sessionId && other.clientId === clientId) {
+        prevState = {
+          x: other.x,
+          z: other.z,
+          rot: other.rot,
+          seatId: other.seatId,
+          tool: other.tool,
+          team: other.team,
+          rawMeat: other.rawMeat,
+          cookedMeat: other.cookedMeat,
+          energy: other.energy,
+        };
         const old = this.clients.find((c) => c.sessionId === sid);
         this.dropPlayer(sid, "replaced by a new connection");
         old?.leave(CLOSE.replaced);
@@ -828,16 +852,16 @@ export class HubRoom extends Room<{ state: HubState }> {
 
     const angle = Math.random() * Math.PI * 2;
     const radius = 7 + Math.random() * 3;
-    player.x = Math.cos(angle) * radius;
-    player.z = Math.sin(angle) * radius;
-    player.rot = Math.atan2(-player.x, -player.z);
-    player.anim = ANIM.idle;
-    player.seatId = -1;
-    player.tool = TOOL.none;
-    player.team = TEAM.none;
-    player.rawMeat = 0;
-    player.cookedMeat = 1;
-    player.energy = 85;
+    player.x = prevState ? prevState.x : Math.cos(angle) * radius;
+    player.z = prevState ? prevState.z : Math.sin(angle) * radius;
+    player.rot = prevState ? prevState.rot : Math.atan2(-player.x, -player.z);
+    player.anim = prevState && prevState.seatId >= 0 ? ANIM.sit : ANIM.idle;
+    player.seatId = prevState ? prevState.seatId : -1;
+    player.tool = prevState ? prevState.tool : TOOL.none;
+    player.team = prevState ? prevState.team : TEAM.none;
+    player.rawMeat = prevState ? prevState.rawMeat : 0;
+    player.cookedMeat = prevState ? prevState.cookedMeat : 1;
+    player.energy = prevState ? prevState.energy : 85;
     player.mimicTrapped = 0;
 
     const now = Date.now();
@@ -867,14 +891,14 @@ export class HubRoom extends Room<{ state: HubState }> {
   }
 
   override onDrop(client: Client, code?: number): void {
-    // Allow 20s to reconnect on unexpected network/mobile drops (not kicks/bans/replacements/idle).
+    // Allow 45s to reconnect on unexpected network/mobile drops (not kicks/bans/replacements/idle).
     if (
       code !== CLOSE.replaced &&
       code !== CLOSE.kicked &&
       code !== CLOSE.banned &&
       code !== CLOSE.idle
     ) {
-      this.allowReconnection(client, 20);
+      this.allowReconnection(client, 45);
     }
   }
 
@@ -1660,17 +1684,24 @@ export class HubRoom extends Room<{ state: HubState }> {
     const dz = z - player.z;
     const dist = Math.hypot(dx, dz);
     const allowed = PLAYER.maxSpeed * SPEED_SLACK * dt;
-    // Allow portal teleport jumps between Haunted Gate and off-map Dungeon
-    const isPortalEntry = !wasInDungeon && isInBrickDungeon(x, z) && isAtHauntedGatePortal(player.x, player.z);
-    const isPortalExit = wasInDungeon && !isInBrickDungeon(x, z) && isAtDungeonExitPortal(player.x, player.z);
-    if (!isPortalEntry && !isPortalExit && dist > allowed && dist > 0 && player.seatId < 0) {
-      const k = allowed / dist;
-      x = player.x + dx * k;
-      z = player.z + dz * k;
-    }
-    if (!wasInDungeon && isAtHauntedGatePortal(x, z)) {
+    // Allow portal teleport jumps between Haunted Gate (south forest z >= 90) and off-map Dungeon,
+    // or immediate position restoration right after a seamless rejoin.
+    const isPortalEntry = !wasInDungeon && inDungeonTarget && player.z >= 90;
+    const isPortalExit = wasInDungeon && !inDungeonTarget && player.z <= BRICK_DUNGEON.startZ + 30;
+    const isFreshRejoinSync = now - session.joinedAt < 4000;
+    if (isPortalEntry) {
       x = BRICK_DUNGEON.centerX;
-      z = BRICK_DUNGEON.startZ + 3.5;
+      z = BRICK_DUNGEON.startZ + 4.5;
+      session.lastSafeX = x;
+      session.lastSafeZ = z;
+    } else if (isPortalExit) {
+      x = HAUNTED_GATE.exitX;
+      z = HAUNTED_GATE.exitZ;
+      session.lastSafeX = x;
+      session.lastSafeZ = z;
+    } else if (!wasInDungeon && isAtHauntedGatePortal(x, z)) {
+      x = BRICK_DUNGEON.centerX;
+      z = BRICK_DUNGEON.startZ + 4.5;
       session.lastSafeX = x;
       session.lastSafeZ = z;
     } else if (wasInDungeon && isAtDungeonExitPortal(x, z)) {
@@ -1678,6 +1709,13 @@ export class HubRoom extends Room<{ state: HubState }> {
       z = HAUNTED_GATE.exitZ;
       session.lastSafeX = x;
       session.lastSafeZ = z;
+    } else if (isFreshRejoinSync) {
+      session.lastSafeX = x;
+      session.lastSafeZ = z;
+    } else if (dist > allowed && dist > 0 && player.seatId < 0) {
+      const k = allowed / dist;
+      x = player.x + dx * k;
+      z = player.z + dz * k;
     }
 
     const wasInCinema = (player.seatId >= 0 && player.seatId < CINEMA_HALL.seatCount) || isInCinemaHall(player.x, player.z);

@@ -25,11 +25,25 @@ const health = createEndpoint("/health", { method: "GET" }, async () => {
 export function createWorldServer() {
   return defineServer({
     // Multi-peer WebRTC offers and ICE bursts can exceed 16 KB.
-    // 12s ping timeout (3 × 4s) tolerates brief blips while letting the server detect dead sockets before reconnects expire.
+    // beforeUpgrade calls checkReconnectionToken so half-open stale sockets are closed immediately on reconnect.
     transport: new WebSocketTransport({
       maxPayload: 64 * 1024,
-      pingInterval: 4_000,
+      pingInterval: 5_000,
       pingMaxRetries: 3,
+      beforeUpgrade(request) {
+        try {
+          const url = new URL(request.url);
+          const reconnectionToken = url.searchParams.get("reconnectionToken");
+          const m = url.pathname.match(/\/[a-zA-Z0-9_-]+\/([a-zA-Z0-9_-]+)$/);
+          const roomId = m?.[1];
+          if (reconnectionToken && roomId) {
+            const room = matchMaker.getLocalRoomById(roomId);
+            room?.checkReconnectionToken(reconnectionToken);
+          }
+        } catch {
+          /* ignore malformed upgrade URLs */
+        }
+      },
     }),
     rooms: {
       [ROOMS.hub]: defineRoom(HubRoom),

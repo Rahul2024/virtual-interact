@@ -290,7 +290,7 @@ export const HAUNTED_GATE = {
 } as const;
 
 export function isAtHauntedGatePortal(x: number, z: number): boolean {
-  return Math.abs(x - HAUNTED_GATE.x) <= HAUNTED_GATE.portalHalfW && z >= HAUNTED_GATE.portalZ - 0.8 && z <= HAUNTED_GATE.z + 1.2;
+  return Math.abs(x - HAUNTED_GATE.x) <= HAUNTED_GATE.portalHalfW && z >= HAUNTED_GATE.portalZ - 1.1 && z <= HAUNTED_GATE.z + 2.0;
 }
 
 const DUNGEON_Z_OFFSET = 1080;
@@ -394,7 +394,7 @@ export const BRICK_DUNGEON = {
 } as const;
 
 export function isAtDungeonExitPortal(x: number, z: number): boolean {
-  return Math.abs(x - BRICK_DUNGEON.centerX) <= 5.5 && z >= BRICK_DUNGEON.startZ - 2.0 && z <= BRICK_DUNGEON.startZ + 0.8;
+  return Math.abs(x - BRICK_DUNGEON.centerX) <= 6.5 && z >= BRICK_DUNGEON.startZ - 4.0 && z <= BRICK_DUNGEON.startZ + 1.4;
 }
 
 /** The flags that decide which dungeon doors are currently solid. */
@@ -481,8 +481,8 @@ export function chestAt(x: number, z: number): 0 | 1 | 2 | 3 {
 }
 
 export function isInBrickDungeon(x: number, z: number): boolean {
-  const maxW = z >= BRICK_DUNGEON.sanctumStartZ ? BRICK_DUNGEON.bossHalfW + 3 : BRICK_DUNGEON.halfW + 3;
-  return Math.abs(x - BRICK_DUNGEON.centerX) <= maxW && z >= BRICK_DUNGEON.startZ - 3 && z <= BRICK_DUNGEON.endZ + 3;
+  const maxW = z >= BRICK_DUNGEON.sanctumStartZ ? BRICK_DUNGEON.bossHalfW + 20 : BRICK_DUNGEON.halfW + 20;
+  return Math.abs(x - BRICK_DUNGEON.centerX) <= maxW && z >= BRICK_DUNGEON.startZ - 25 && z <= BRICK_DUNGEON.endZ + 25;
 }
 
 /**
