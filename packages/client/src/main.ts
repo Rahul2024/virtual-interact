@@ -724,6 +724,7 @@ interface Session {
   sendAccumulator: number;
   emoteUntil: number;
   startedAt: number;
+  spawned: boolean;
 }
 
 let session: Session | undefined;
@@ -959,6 +960,7 @@ function runSession(
       sendAccumulator: 0,
       emoteUntil: 0,
       startedAt: performance.now(),
+      spawned: false,
     });
 
     cinema.onToggleSeat = () => toggleNearestSeat(s, false);
@@ -1083,7 +1085,10 @@ function runSession(
           me.seatId = player.seatId;
           me.setTool(player.tool as ToolId);
           controls.yaw = player.rot + Math.PI;
+          s.lastSent = { x: player.x, z: player.z, rot: player.rot, anim: me.anim, at: performance.now() };
+          s.sentHistory.push(s.lastSent);
         }
+        s.spawned = true;
         me.mimicTrapped = player.mimicTrapped ?? 0;
         me.setTeam(player.team as TeamId);
         me.setName(player.name);
@@ -1112,9 +1117,11 @@ function runSession(
             return;
           }
           const echoed = s.sentHistory.some((p) => Math.abs(p.x - player.x) < 0.05 && Math.abs(p.z - player.z) < 0.05);
-          if (!echoed) {
+          const drift = Math.hypot(player.x - me.position.x, player.z - me.position.z);
+          if (!echoed && drift > 3.5) {
             me.position.set(player.x, getWorldFloorY(player.x, player.z), player.z);
-            s.sentHistory.length = 0;
+            s.lastSent = { x: player.x, z: player.z, rot: player.rot, anim: me.anim, at: performance.now() };
+            s.sentHistory.push(s.lastSent);
           }
         });
         updateCount();
@@ -1579,6 +1586,10 @@ function roomPlayerName(s: Session, sid: string): string {
 }
 
 function stepLocal(s: Session, dt: number, now: number) {
+  if (!s.spawned) {
+    s.me.update(dt);
+    return;
+  }
   if (s.me.mimicTrapped > 0) {
     s.me.position.y = getWorldFloorY(s.me.position.x, s.me.position.z);
     s.me.update(dt);
@@ -1659,7 +1670,7 @@ function stepRemotes(s: Session, dt: number) {
 }
 
 function maybeSend(s: Session, dt: number) {
-  if (!s.room.connection?.isOpen) return;
+  if (!s.spawned || !s.room.connection?.isOpen) return;
   s.sendAccumulator += dt;
   if (s.sendAccumulator < 1 / NET.sendHz) return;
   s.sendAccumulator = 0;
@@ -1677,7 +1688,7 @@ function maybeSend(s: Session, dt: number) {
   s.room.send(MSG.move, msg);
   s.lastSent = { x, z, rot, anim, at: performance.now() };
   s.sentHistory.push(s.lastSent);
-  if (s.sentHistory.length > 8) s.sentHistory.shift();
+  if (s.sentHistory.length > 40) s.sentHistory.shift();
 }
 
 requestAnimationFrame(frame);
