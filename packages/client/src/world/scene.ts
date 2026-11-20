@@ -51,6 +51,7 @@ export interface World {
   setScreenTexture(tex: THREE.Texture, accentColor?: string): void;
   setFootballState(ballX: number, ballZ: number, scoreRed: number, scoreBlue: number): void;
   setDungeonState(view: DungeonView): void;
+  ensureDungeonLoaded(): void;
   syncAnimals(animals: AnimalRenderState[]): void;
   paintMuralData(pixels: number[]): void;
   paintMuralPixel(x: number, y: number, colorIdx: number): void;
@@ -324,7 +325,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   camera.position.set(0, 6, 12);
 
   const colliders = new Colliders();
-  const dungeonColliders = new Colliders();
+  const dungeonColliders = new Colliders(false);
   const lampHeads: THREE.Mesh[] = [];
   const streetLights: THREE.PointLight[] = [];
   const windowMaterials: THREE.MeshStandardMaterial[] = [];
@@ -427,6 +428,7 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       lastDungeonView = view;
       if (dungeonRig) dungeonRig.update(view);
     },
+    ensureDungeonLoaded,
     syncAnimals(animals: AnimalRenderState[]) {
       const now = performance.now();
       const playerInDungeon = isInBrickDungeon(camera.position.x, camera.position.z);

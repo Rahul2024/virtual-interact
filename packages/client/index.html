@@ -265,13 +265,19 @@
           <button id="arcade-close" type="button" class="ideas-x" aria-label="Close">×</button>
         </header>
         <nav id="arcade-tabs" class="ideas-tabs" aria-label="Arcade Games">
-          <button type="button" data-game="c4" class="active">Connect 4</button>
-          <button type="button" data-game="ttt">Tic-Tac-Toe</button>
-          <button type="button" data-game="trivia">Trivia</button>
+          <button type="button" data-game="ttt" class="active">❌⭕ Cut-Cross</button>
+          <button type="button" data-game="chess">♟️ Chess</button>
+          <button type="button" data-game="c4">🔴🟡 Connect 4</button>
+          <button type="button" data-game="trivia">❓ Trivia</button>
         </nav>
+        <div class="arcade-mode-bar" id="arcade-mode-bar">
+          <button type="button" id="arcade-mode-bot" class="dock-btn accent">🤖 Vs Nova (Bot)</button>
+          <button type="button" id="arcade-mode-pvp" class="dock-btn">👥 2-Player / Room</button>
+        </div>
         <div class="arcade-body">
-          <div id="arcade-c4"></div>
-          <div id="arcade-ttt" hidden></div>
+          <div id="arcade-ttt"></div>
+          <div id="arcade-chess" hidden></div>
+          <div id="arcade-c4" hidden></div>
           <div id="arcade-trivia" hidden></div>
         </div>
       </div>

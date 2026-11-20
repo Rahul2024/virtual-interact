@@ -127,6 +127,16 @@ const worldNpcs: WorldNpc[] = (() => {
   };
   world.scene.add(viktor.group);
 
+  // 4. Nova — Royal Arcade 2-Player Game Bot (plays Chess, Cut-Cross & Connect 4 with you!)
+  const nova = new Avatar("🤖 Nova · Arcade Bot", "#6fcf7a");
+  nova.onClick = () => {
+    nova.react("🕹️");
+    nova.say("Let's play! Pick Cut-Cross, Chess, or Connect 4 — I'm ready!", 6500);
+    hud.addChat("🤖 Nova · Arcade Bot", "Let's play! Pick Cut-Cross, Chess, or Connect 4 in the Arcade!", "#6fcf7a");
+    activities.openArcadeModal("ttt", true);
+  };
+  world.scene.add(nova.group);
+
   return [
     {
       avatar: aria,
@@ -181,6 +191,24 @@ const worldNpcs: WorldNpc[] = (() => {
         const z = 96 + u * 16;
         const rot = u >= 0 ? 0 : Math.PI;
         return { x, z, rot, anim: Math.abs(Math.cos(tSec * 0.16)) < 0.15 ? ANIM.idle : ANIM.walk };
+      },
+    },
+    {
+      avatar: nova,
+      lines: [
+        "Click me to play ♟️ Chess, ❌⭕ Cut-Cross, or 🔴🟡 Connect 4 right now!",
+        "Think you can beat me at Chess or Cut-Cross? Tap my name or press E in the Arcade!",
+        "Up for a quick 2-player match? Challenge me anytime at the Arcade cabinets!",
+      ],
+      lineIdx: 0,
+      lastSpokeAt: 6000,
+      sample(tSec: number) {
+        const u = Math.sin(tSec * 0.25);
+        const paused = Math.abs(Math.cos(tSec * 0.25)) < 0.22;
+        const x = 75.5 + u * 4.2;
+        const z = -10.5;
+        const rot = paused ? 0 : Math.cos(tSec * 0.25) >= 0 ? Math.PI / 2 : -Math.PI / 2;
+        return { x, z, rot, anim: paused ? ANIM.wave : ANIM.walk };
       },
     },
   ];
@@ -1634,16 +1662,21 @@ function stepLocal(s: Session, dt: number, now: number) {
   }
   const wasInDungeon = isInBrickDungeon(s.me.position.x, s.me.position.z);
   if (!wasInDungeon && isAtHauntedGatePortal(s.me.position.x, s.me.position.z)) {
+    world.ensureDungeonLoaded();
     s.me.position.set(BRICK_DUNGEON.centerX, 0, BRICK_DUNGEON.startZ + 4.5);
     s.me.rot = 0;
     controls.yaw = Math.PI;
+    s.lastSent = { x: s.me.position.x, z: s.me.position.z, rot: s.me.rot, anim: s.me.anim, at: 0 };
     s.sentHistory.length = 0;
+    s.sentHistory.push(s.lastSent);
     s.sendAccumulator = 1;
   } else if (wasInDungeon && isAtDungeonExitPortal(s.me.position.x, s.me.position.z)) {
     s.me.position.set(HAUNTED_GATE.exitX, 0, HAUNTED_GATE.exitZ);
     s.me.rot = Math.PI;
     controls.yaw = 0;
+    s.lastSent = { x: s.me.position.x, z: s.me.position.z, rot: s.me.rot, anim: s.me.anim, at: 0 };
     s.sentHistory.length = 0;
+    s.sentHistory.push(s.lastSent);
     s.sendAccumulator = 1;
   }
   const activeColliders = isInBrickDungeon(s.me.position.x, s.me.position.z) ? world.dungeonColliders : world.colliders;

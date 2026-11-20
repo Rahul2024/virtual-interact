@@ -11,6 +11,24 @@ import {
   type ToolId,
 } from "@vi/shared";
 import type { TimeMode } from "../world/scene";
+import {
+  CHESS_GLYPHS,
+  applyChessMove,
+  checkC4Winner,
+  checkTttWinner,
+  createInitialChessBoard,
+  dropC4Piece,
+  isKingInCheck,
+  legalChessMoves,
+  pickC4BotMove,
+  pickChessBotMove,
+  pickTttBotMove,
+  type ChessColor,
+  type ChessMove,
+  type ChessPiece,
+} from "./arcadeBot";
+
+export type ArcadeGameTab = "ttt" | "chess" | "c4" | "trivia";
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -61,7 +79,7 @@ const TRIVIA_QUESTIONS: Array<{ q: string; options: [string, string, string, str
  * 1. Top HUD Indian Standard Time (IST) & Day/Sunset/Night Cycle Switcher
  * 2. Compact Context Action Bar (visible in activity zones OR when near a non-friend player anywhere)
  * 3. Shared Pixel Graffiti Mural Painter Modal (opened with E near the Mural)
- * 4. East Multiplayer Arcade Modal (opened with E inside the Arcade)
+ * 4. East Multiplayer & Vs-Bot (🤖 Nova) Arcade Modal (Cut-Cross, Chess, Connect 4, Trivia)
  */
 export class ActivitiesController {
   private timeBtn = el<HTMLButtonElement>("time-mode-btn");
@@ -78,14 +96,37 @@ export class ActivitiesController {
   private selectedColorIdx = 2;
   private paintingMural = false;
 
-  // Multiplayer Arcade Modal
+  // Arcade Modal (Vs 🤖 Nova Bot + Multiplayer Room)
   private arcadeModal = el<HTMLDivElement>("arcade-modal");
   private arcadeClose = el<HTMLButtonElement>("arcade-close");
   private arcadeTabs = el<HTMLElement>("arcade-tabs");
+  private arcadeModeBar = el<HTMLDivElement>("arcade-mode-bar");
+  private arcadeModeBotBtn = el<HTMLButtonElement>("arcade-mode-bot");
+  private arcadeModePvpBtn = el<HTMLButtonElement>("arcade-mode-pvp");
   private c4Container = el<HTMLDivElement>("arcade-c4");
   private tttContainer = el<HTMLDivElement>("arcade-ttt");
+  private chessContainer = el<HTMLDivElement>("arcade-chess");
   private triviaContainer = el<HTMLDivElement>("arcade-trivia");
-  private activeArcadeTab: "c4" | "ttt" | "trivia" = "c4";
+  private activeArcadeTab: ArcadeGameTab = "ttt";
+  private vsBot = true;
+  private botThinking = false;
+  private botTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Local Vs-Nova state for Cut-Cross, Connect 4, and Chess
+  private botTttBoard: number[] = new Array(9).fill(0);
+  private botTttTurn: 1 | 2 = 1;
+  private botTttWinner: 0 | 1 | 2 | 3 = 0;
+
+  private botC4Board: number[] = new Array(42).fill(0);
+  private botC4Turn: 1 | 2 = 1;
+  private botC4Winner: 0 | 1 | 2 | 3 = 0;
+
+  private chessBoard: Array<ChessPiece | null> = createInitialChessBoard();
+  private chessTurn: ChessColor = "w";
+  private chessSelected: number | null = null;
+  private chessLastMove: ChessMove | null = null;
+  private chessStatus = "";
+
   private lastArcadeState: ArcadeStateBroadcast = {
     c4Board: new Array(42).fill(0),
     c4Turn: 1,
@@ -217,20 +258,47 @@ export class ActivitiesController {
     });
     this.arcadeTabs.querySelectorAll<HTMLButtonElement>("button[data-game]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        this.activeArcadeTab = (btn.dataset.game as "c4" | "ttt" | "trivia") ?? "c4";
-        this.arcadeTabs.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
+        this.activeArcadeTab = (btn.dataset.game as ArcadeGameTab) ?? "ttt";
+        this.syncArcadeTabButtons();
         this.renderArcade();
       });
     });
+    this.arcadeModeBotBtn.addEventListener("click", () => {
+      this.vsBot = true;
+      this.syncModeButtons();
+      this.renderArcade();
+    });
+    this.arcadeModePvpBtn.addEventListener("click", () => {
+      this.vsBot = false;
+      this.syncModeButtons();
+      this.renderArcade();
+    });
   }
 
-  openArcadeModal() {
+  private syncArcadeTabButtons() {
+    this.arcadeTabs.querySelectorAll<HTMLButtonElement>("button[data-game]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.game === this.activeArcadeTab);
+    });
+  }
+
+  private syncModeButtons() {
+    this.arcadeModeBotBtn.classList.toggle("accent", this.vsBot);
+    this.arcadeModePvpBtn.classList.toggle("accent", !this.vsBot);
+  }
+
+  openArcadeModal(tab?: ArcadeGameTab, vsBot?: boolean) {
+    if (tab) this.activeArcadeTab = tab;
+    if (vsBot !== undefined) this.vsBot = vsBot;
+    this.syncArcadeTabButtons();
+    this.syncModeButtons();
     this.renderArcade();
     this.arcadeModal.hidden = false;
     this.onOpenMuralChange(true);
   }
 
   closeArcadeModal() {
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botThinking = false;
     this.arcadeModal.hidden = true;
     this.onOpenMuralChange(!this.muralModal.hidden);
   }
@@ -240,33 +308,293 @@ export class ActivitiesController {
     if (!this.arcadeModal.hidden) this.renderArcade();
   }
 
+  private resetBotTtt() {
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botThinking = false;
+    this.botTttBoard.fill(0);
+    this.botTttTurn = 1;
+    this.botTttWinner = 0;
+    this.renderArcade();
+  }
+
+  private playBotTttCell(idx: number) {
+    if (this.botThinking || this.botTttWinner !== 0 || this.botTttBoard[idx] !== 0) return;
+    this.botTttBoard[idx] = 1;
+    this.botTttWinner = checkTttWinner(this.botTttBoard);
+    if (this.botTttWinner !== 0) {
+      this.renderArcade();
+      return;
+    }
+    this.botTttTurn = 2;
+    this.botThinking = true;
+    this.renderArcade();
+    this.botTimer = setTimeout(() => {
+      const move = pickTttBotMove(this.botTttBoard, 2);
+      if (move >= 0) {
+        this.botTttBoard[move] = 2;
+        this.botTttWinner = checkTttWinner(this.botTttBoard);
+      }
+      this.botTttTurn = 1;
+      this.botThinking = false;
+      this.renderArcade();
+    }, 340);
+  }
+
+  private resetBotC4() {
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botThinking = false;
+    this.botC4Board.fill(0);
+    this.botC4Turn = 1;
+    this.botC4Winner = 0;
+    this.renderArcade();
+  }
+
+  private playBotC4Col(col: number) {
+    if (this.botThinking || this.botC4Winner !== 0) return;
+    const placed = dropC4Piece(this.botC4Board, col, 1);
+    if (placed < 0) return;
+    this.botC4Winner = checkC4Winner(this.botC4Board);
+    if (this.botC4Winner !== 0) {
+      this.renderArcade();
+      return;
+    }
+    this.botC4Turn = 2;
+    this.botThinking = true;
+    this.renderArcade();
+    this.botTimer = setTimeout(() => {
+      const botCol = pickC4BotMove(this.botC4Board, 2);
+      if (botCol >= 0) {
+        dropC4Piece(this.botC4Board, botCol, 2);
+        this.botC4Winner = checkC4Winner(this.botC4Board);
+      }
+      this.botC4Turn = 1;
+      this.botThinking = false;
+      this.renderArcade();
+    }, 380);
+  }
+
+  private resetChess() {
+    if (this.botTimer) clearTimeout(this.botTimer);
+    this.botThinking = false;
+    this.chessBoard = createInitialChessBoard();
+    this.chessTurn = "w";
+    this.chessSelected = null;
+    this.chessLastMove = null;
+    this.chessStatus = "";
+    this.renderArcade();
+  }
+
+  private clickChessSquare(sq: number) {
+    if (this.botThinking || this.chessStatus.includes("Checkmate") || this.chessStatus.includes("Stalemate")) return;
+    if (this.vsBot && this.chessTurn === "b") return;
+
+    const legal = legalChessMoves(this.chessBoard, this.chessTurn);
+    if (this.chessSelected !== null) {
+      const chosen = legal.find((m) => m.from === this.chessSelected && m.to === sq);
+      if (chosen) {
+        this.executeChessMove(chosen);
+        return;
+      }
+    }
+    const piece = this.chessBoard[sq];
+    if (piece && piece.c === this.chessTurn) {
+      this.chessSelected = this.chessSelected === sq ? null : sq;
+    } else {
+      this.chessSelected = null;
+    }
+    this.renderArcade();
+  }
+
+  private executeChessMove(move: ChessMove) {
+    this.chessBoard = applyChessMove(this.chessBoard, move);
+    this.chessLastMove = move;
+    this.chessSelected = null;
+    this.chessTurn = this.chessTurn === "w" ? "b" : "w";
+
+    const nextLegal = legalChessMoves(this.chessBoard, this.chessTurn);
+    const inCheck = isKingInCheck(this.chessBoard, this.chessTurn);
+    if (nextLegal.length === 0) {
+      if (inCheck) {
+        const winner = this.chessTurn === "w" ? (this.vsBot ? "🤖 Nova (Black)" : "Black") : "White (You)";
+        this.chessStatus = `👑 Checkmate! ${winner} wins!`;
+      } else {
+        this.chessStatus = "🤝 Stalemate — Draw!";
+      }
+      this.renderArcade();
+      return;
+    }
+    this.chessStatus = inCheck ? "⚠️ Check!" : "";
+    this.renderArcade();
+
+    if (this.vsBot && this.chessTurn === "b") {
+      this.botThinking = true;
+      this.renderArcade();
+      this.botTimer = setTimeout(() => {
+        const botMove = pickChessBotMove(this.chessBoard, "b");
+        this.botThinking = false;
+        if (botMove) {
+          this.executeChessMove(botMove);
+        } else {
+          this.renderArcade();
+        }
+      }, 360);
+    }
+  }
+
   private renderArcade() {
-    this.c4Container.hidden = this.activeArcadeTab !== "c4";
     this.tttContainer.hidden = this.activeArcadeTab !== "ttt";
+    this.chessContainer.hidden = this.activeArcadeTab !== "chess";
+    this.c4Container.hidden = this.activeArcadeTab !== "c4";
     this.triviaContainer.hidden = this.activeArcadeTab !== "trivia";
+    this.arcadeModeBar.hidden = this.activeArcadeTab === "trivia";
 
     const st = this.lastArcadeState;
 
-    if (this.activeArcadeTab === "c4") {
-      this.c4Container.innerHTML = "";
+    if (this.activeArcadeTab === "ttt") {
+      this.tttContainer.innerHTML = "";
+      const board = this.vsBot ? this.botTttBoard : st.tttBoard;
+      const turn = this.vsBot ? this.botTttTurn : st.tttTurn;
+      const winner = this.vsBot ? this.botTttWinner : st.tttWinner;
+
       const status = document.createElement("div");
       status.className = "arcade-status";
       status.textContent =
-        st.c4Winner === 1
-          ? "🔴 Red Wins!"
-          : st.c4Winner === 2
-            ? "🟡 Yellow Wins!"
-            : st.c4Winner === 3
+        winner === 1
+          ? this.vsBot
+            ? "🎉 You (❌) beat Nova!"
+            : "❌ X Wins!"
+          : winner === 2
+            ? this.vsBot
+              ? "🤖 Nova (⭕) Wins!"
+              : "⭕ O Wins!"
+            : winner === 3
               ? "🤝 Draw!"
-              : st.c4Turn === 1
-                ? "Turn: 🔴 Red"
-                : "Turn: 🟡 Yellow";
+              : this.botThinking
+                ? "🤖 Nova is thinking…"
+                : turn === 1
+                  ? this.vsBot
+                    ? "Your turn (❌)"
+                    : "Turn: ❌ X"
+                  : this.vsBot
+                    ? "Nova's turn (⭕)"
+                    : "Turn: ⭕ O";
 
       const resetBtn = document.createElement("button");
       resetBtn.type = "button";
       resetBtn.className = "dock-btn";
       resetBtn.textContent = "New Game";
-      resetBtn.addEventListener("click", () => this.onArcadeReset("c4"));
+      resetBtn.addEventListener("click", () => (this.vsBot ? this.resetBotTtt() : this.onArcadeReset("ttt")));
+      status.appendChild(resetBtn);
+      this.tttContainer.appendChild(status);
+
+      const grid = document.createElement("div");
+      grid.className = "ttt-grid";
+      for (let i = 0; i < 9; i++) {
+        const val = board[i] ?? 0;
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "ttt-cell";
+        cell.textContent = val === 1 ? "❌" : val === 2 ? "⭕" : "";
+        cell.addEventListener("click", () => (this.vsBot ? this.playBotTttCell(i) : this.onArcadeMove("ttt", i)));
+        grid.appendChild(cell);
+      }
+      this.tttContainer.appendChild(grid);
+    } else if (this.activeArcadeTab === "chess") {
+      this.chessContainer.innerHTML = "";
+      const status = document.createElement("div");
+      status.className = "arcade-status";
+      if (this.chessStatus.includes("Checkmate") || this.chessStatus.includes("Stalemate")) {
+        status.textContent = this.chessStatus;
+      } else if (this.botThinking) {
+        status.textContent = "🤖 Nova is thinking…";
+      } else {
+        const turnLabel =
+          this.chessTurn === "w"
+            ? this.vsBot
+              ? "⬜ Your Turn (White)"
+              : "⬜ White's Turn"
+            : this.vsBot
+              ? "⬛ Nova's Turn (Black)"
+              : "⬛ Black's Turn";
+        status.textContent = this.chessStatus ? `${turnLabel} · ${this.chessStatus}` : turnLabel;
+      }
+
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "dock-btn";
+      resetBtn.textContent = "New Game";
+      resetBtn.addEventListener("click", () => this.resetChess());
+      status.appendChild(resetBtn);
+      this.chessContainer.appendChild(status);
+
+      const legalForSelected =
+        this.chessSelected !== null
+          ? legalChessMoves(this.chessBoard, this.chessTurn).filter((m) => m.from === this.chessSelected)
+          : [];
+      const targetMap = new Map<number, ChessMove>();
+      for (const m of legalForSelected) targetMap.set(m.to, m);
+
+      const grid = document.createElement("div");
+      grid.className = "chess-grid";
+      for (let sq = 0; sq < 64; sq++) {
+        const r = Math.floor(sq / 8);
+        const c = sq % 8;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        const isLight = (r + c) % 2 === 0;
+        const moveTarget = targetMap.get(sq);
+        const isLast = this.chessLastMove && (this.chessLastMove.from === sq || this.chessLastMove.to === sq);
+        btn.className =
+          "chess-sq " +
+          (isLight ? "light" : "dark") +
+          (this.chessSelected === sq ? " selected" : "") +
+          (moveTarget ? (moveTarget.capture ? " capture" : " target") : "") +
+          (isLast ? " last-move" : "");
+        const p = this.chessBoard[sq];
+        if (p) {
+          const span = document.createElement("span");
+          span.className = p.c === "w" ? "chess-piece-w" : "chess-piece-b";
+          span.textContent = CHESS_GLYPHS[p.c][p.t];
+          btn.appendChild(span);
+        }
+        btn.addEventListener("click", () => this.clickChessSquare(sq));
+        grid.appendChild(btn);
+      }
+      this.chessContainer.appendChild(grid);
+    } else if (this.activeArcadeTab === "c4") {
+      this.c4Container.innerHTML = "";
+      const board = this.vsBot ? this.botC4Board : st.c4Board;
+      const turn = this.vsBot ? this.botC4Turn : st.c4Turn;
+      const winner = this.vsBot ? this.botC4Winner : st.c4Winner;
+
+      const status = document.createElement("div");
+      status.className = "arcade-status";
+      status.textContent =
+        winner === 1
+          ? this.vsBot
+            ? "🎉 You (🔴) beat Nova!"
+            : "🔴 Red Wins!"
+          : winner === 2
+            ? this.vsBot
+              ? "🤖 Nova (🟡) Wins!"
+              : "🟡 Yellow Wins!"
+            : winner === 3
+              ? "🤝 Draw!"
+              : this.botThinking
+                ? "🤖 Nova is thinking…"
+                : turn === 1
+                  ? this.vsBot
+                    ? "Your turn (🔴)"
+                    : "Turn: 🔴 Red"
+                  : this.vsBot
+                    ? "Nova's turn (🟡)"
+                    : "Turn: 🟡 Yellow";
+
+      const resetBtn = document.createElement("button");
+      resetBtn.type = "button";
+      resetBtn.className = "dock-btn";
+      resetBtn.textContent = "New Game";
+      resetBtn.addEventListener("click", () => (this.vsBot ? this.resetBotC4() : this.onArcadeReset("c4")));
       status.appendChild(resetBtn);
       this.c4Container.appendChild(status);
 
@@ -274,50 +602,15 @@ export class ActivitiesController {
       grid.className = "c4-grid";
       for (let r = 0; r < 6; r++) {
         for (let c = 0; c < 7; c++) {
-          const val = st.c4Board[r * 7 + c] ?? 0;
+          const val = board[r * 7 + c] ?? 0;
           const cell = document.createElement("button");
           cell.type = "button";
           cell.className = "c4-cell" + (val === 1 ? " red" : val === 2 ? " yellow" : "");
-          cell.addEventListener("click", () => this.onArcadeMove("c4", c));
+          cell.addEventListener("click", () => (this.vsBot ? this.playBotC4Col(c) : this.onArcadeMove("c4", c)));
           grid.appendChild(cell);
         }
       }
       this.c4Container.appendChild(grid);
-    } else if (this.activeArcadeTab === "ttt") {
-      this.tttContainer.innerHTML = "";
-      const status = document.createElement("div");
-      status.className = "arcade-status";
-      status.textContent =
-        st.tttWinner === 1
-          ? "❌ X Wins!"
-          : st.tttWinner === 2
-            ? "⭕ O Wins!"
-            : st.tttWinner === 3
-              ? "🤝 Draw!"
-              : st.tttTurn === 1
-                ? "Turn: ❌ X"
-                : "Turn: ⭕ O";
-
-      const resetBtn = document.createElement("button");
-      resetBtn.type = "button";
-      resetBtn.className = "dock-btn";
-      resetBtn.textContent = "New Game";
-      resetBtn.addEventListener("click", () => this.onArcadeReset("ttt"));
-      status.appendChild(resetBtn);
-      this.tttContainer.appendChild(status);
-
-      const grid = document.createElement("div");
-      grid.className = "ttt-grid";
-      for (let i = 0; i < 9; i++) {
-        const val = st.tttBoard[i] ?? 0;
-        const cell = document.createElement("button");
-        cell.type = "button";
-        cell.className = "ttt-cell";
-        cell.textContent = val === 1 ? "❌" : val === 2 ? "⭕" : "";
-        cell.addEventListener("click", () => this.onArcadeMove("ttt", i));
-        grid.appendChild(cell);
-      }
-      this.tttContainer.appendChild(grid);
     } else {
       this.triviaContainer.innerHTML = "";
       const qObj = TRIVIA_QUESTIONS[st.triviaIdx % TRIVIA_QUESTIONS.length]!;
@@ -474,6 +767,8 @@ export class ActivitiesController {
 
     if (opts.inArcade) {
       addBtn("🕹️ Play Arcade (E)", "accent", () => this.openArcadeModal());
+      addBtn("♟️ Chess vs Nova", "primary", () => this.openArcadeModal("chess", true));
+      addBtn("❌⭕ Cut-Cross vs Nova", "primary", () => this.openArcadeModal("ttt", true));
     }
 
     if (opts.inDungeon) {

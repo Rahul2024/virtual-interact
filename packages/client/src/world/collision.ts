@@ -21,8 +21,10 @@ export class Colliders {
   /** Boxes that come and go with game state (dungeon doors). Replaced wholesale each frame. */
   dynamic: BoxCollider[] = [];
 
+  constructor(private readonly clampToWorld = true) {}
+
   /**
-   * Pushes a point with the given radius out of every collider and the world
+   * Pushes a point with the given radius out of every collider and (optionally) the world
    * bounds. Good enough for a plaza; a real physics engine is a later plug-in.
    */
   resolve(pos: { x: number; z: number }, radius: number): void {
@@ -39,11 +41,13 @@ export class Colliders {
     }
     this.resolveBoxes(this.boxes, pos, radius);
     this.resolveBoxes(this.dynamic, pos, radius);
-    const limit = WORLD.half - radius;
-    if (pos.x > limit) pos.x = limit;
-    if (pos.x < -limit) pos.x = -limit;
-    if (pos.z > limit) pos.z = limit;
-    if (pos.z < -limit) pos.z = -limit;
+    if (this.clampToWorld) {
+      const limit = WORLD.half - radius;
+      if (pos.x > limit) pos.x = limit;
+      if (pos.x < -limit) pos.x = -limit;
+      if (pos.z > limit) pos.z = limit;
+      if (pos.z < -limit) pos.z = -limit;
+    }
   }
 
   private resolveBoxes(boxes: BoxCollider[], pos: { x: number; z: number }, radius: number): void {

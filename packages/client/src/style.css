@@ -62,7 +62,8 @@ body {
 }
 .cinema-embed-host.mode-expanded {
   z-index: 9;
-  border-radius: 12px;
+  border-radius: 0;
+  border: 0;
 }
 .cinema-embed-host iframe {
   width: 100%;
@@ -577,8 +578,8 @@ body {
 .cinema-overlay {
   position: fixed;
   inset: 0;
-  z-index: 8;
-  background: #000;
+  pointer-events: none;
+  background: transparent;
 }
 .cinema-overlay[hidden] {
   display: none;
@@ -587,25 +588,27 @@ body {
   position: fixed;
   top: max(12px, env(safe-area-inset-top, 12px));
   right: max(12px, env(safe-area-inset-right, 12px));
-  z-index: 11;
-  padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  z-index: 25;
+  pointer-events: auto;
+  padding: 7px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
-  background: rgba(12, 15, 22, 0.72);
+  background: rgba(12, 15, 22, 0.82);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   backdrop-filter: blur(8px);
-  opacity: 0.65;
+  opacity: 0.85;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 .cinema-overlay-toggle:hover,
 .cinema-overlay.controls-open .cinema-overlay-toggle {
   opacity: 1;
   border-color: var(--accent);
-  background: rgba(16, 20, 30, 0.92);
+  background: rgba(16, 20, 30, 0.96);
 }
 .cinema-overlay-top {
   display: none;
@@ -613,13 +616,14 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 20;
+  pointer-events: auto;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 136px 10px 16px;
-  background: rgba(12, 15, 22, 0.86);
+  padding: 10px 146px 10px 16px;
+  background: rgba(12, 15, 22, 0.9);
   border-bottom: 1px solid var(--panel-border);
   backdrop-filter: blur(12px);
 }
@@ -655,8 +659,11 @@ body {
 }
 
 .cinema-overlay-stage {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 8;
+  background: #000;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -681,7 +688,8 @@ body {
   position: fixed;
   left: 0;
   bottom: 0;
-  z-index: 10;
+  z-index: 20;
+  pointer-events: auto;
   width: min(400px, 100vw);
   padding: 8px 16px max(14px, env(safe-area-inset-bottom, 14px));
 }
@@ -800,6 +808,70 @@ body {
 .trivia-scores {
   font-size: 12.5px;
   color: var(--muted);
+}
+.arcade-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px 0;
+}
+.arcade-mode-bar[hidden] {
+  display: none;
+}
+.chess-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(360px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+}
+.chess-sq {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  font-size: clamp(20px, 4.5vw, 28px);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.chess-sq.light {
+  background: #e6d5b8;
+  color: #1a1a1a;
+}
+.chess-sq.dark {
+  background: #8b6240;
+  color: #1a1a1a;
+}
+.chess-sq.selected {
+  box-shadow: inset 0 0 0 3px #38bdf8;
+  background: #7dd3fc !important;
+}
+.chess-sq.target::after {
+  content: "";
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.72);
+  position: absolute;
+}
+.chess-sq.capture {
+  box-shadow: inset 0 0 0 3px #ef4444;
+}
+.chess-sq.last-move {
+  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.85);
+}
+.chess-piece-w {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+.chess-piece-b {
+  color: #141820;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
 }
 
 .swatch-dot {
@@ -944,7 +1016,7 @@ body {
   place-items: center;
   background: rgba(8, 10, 16, 0.55);
   backdrop-filter: blur(3px);
-  z-index: 12;
+  z-index: 30;
 }
 .ideas[hidden] {
   display: none;
