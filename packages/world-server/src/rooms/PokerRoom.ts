@@ -69,7 +69,6 @@ export class PokerRoom extends Room<{ state: PokerTableState }> {
 
   override onCreate(options: { tableId?: string; config?: Partial<PokerTableConfig> }): void {
     this.state.tableId = typeof options?.tableId === "string" ? options.tableId.slice(0, 40) : this.roomId;
-    this.roomId = this.state.tableId; // one room per table id, joinable by id
     for (let i = 0; i < POKER_SEATS; i++) {
       const s = new PokerSeat();
       s.index = i;

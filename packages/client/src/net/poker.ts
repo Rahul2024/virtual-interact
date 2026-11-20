@@ -11,9 +11,5 @@ export type PokerRoomRef = Room<any, PokerTableState>;
  */
 export async function joinPokerTable(tableId: string, config?: Partial<PokerTableConfig>): Promise<PokerRoomRef> {
   const client = new Client(serverUrl());
-  try {
-    return await client.joinById<PokerTableState>(tableId);
-  } catch {
-    return client.create<PokerTableState>(POKER_ROOM, { tableId, config });
-  }
+  return client.joinOrCreate<PokerTableState>(POKER_ROOM, { tableId, config });
 }

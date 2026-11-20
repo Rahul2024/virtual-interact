@@ -47,7 +47,7 @@ export function createWorldServer() {
     }),
     rooms: {
       [ROOMS.hub]: defineRoom(HubRoom),
-      [POKER_ROOM]: defineRoom(PokerRoom),
+      [POKER_ROOM]: defineRoom(PokerRoom).filterBy(["tableId"]),
     },
     routes: createRouter({ health }),
   });

@@ -821,57 +821,79 @@ body {
 .chess-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  width: min(360px, 100%);
-  aspect-ratio: 1;
+  grid-template-rows: repeat(8, 1fr);
+  width: min(384px, 100%);
+  aspect-ratio: 1 / 1;
   margin: 0 auto;
   border-radius: 10px;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 .chess-sq {
-  display: grid;
-  place-items: center;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   padding: 0;
-  font-size: clamp(20px, 4.5vw, 28px);
-  line-height: 1;
+  margin: 0;
   cursor: pointer;
   user-select: none;
   position: relative;
 }
 .chess-sq.light {
-  background: #e6d5b8;
-  color: #1a1a1a;
+  background: #f0d9b5;
+  color: #8b6240;
 }
 .chess-sq.dark {
-  background: #8b6240;
-  color: #1a1a1a;
+  background: #b58863;
+  color: #f0d9b5;
 }
 .chess-sq.selected {
-  box-shadow: inset 0 0 0 3px #38bdf8;
-  background: #7dd3fc !important;
+  background: #60a5fa !important;
+  box-shadow: inset 0 0 0 2px #eff6ff;
+}
+.chess-sq.last-move {
+  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.9);
+  background-image: linear-gradient(rgba(250, 204, 21, 0.28), rgba(250, 204, 21, 0.28));
 }
 .chess-sq.target::after {
   content: "";
-  width: 30%;
-  height: 30%;
+  width: 28%;
+  height: 28%;
   border-radius: 50%;
-  background: rgba(16, 185, 129, 0.72);
+  background: rgba(16, 185, 129, 0.78);
   position: absolute;
+  pointer-events: none;
 }
 .chess-sq.capture {
   box-shadow: inset 0 0 0 3px #ef4444;
 }
-.chess-sq.last-move {
-  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.85);
+.chess-piece-svg {
+  width: 84%;
+  height: 84%;
+  display: block;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
 }
-.chess-piece-w {
-  color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+.chess-coord {
+  position: absolute;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.75;
+  pointer-events: none;
 }
-.chess-piece-b {
-  color: #141820;
-  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+.chess-coord-rank {
+  top: 2px;
+  left: 3px;
+}
+.chess-coord-file {
+  bottom: 2px;
+  right: 3px;
 }
 
 .swatch-dot {

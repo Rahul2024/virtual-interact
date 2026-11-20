@@ -12,10 +12,10 @@ import {
 } from "@vi/shared";
 import type { TimeMode } from "../world/scene";
 import {
-  CHESS_GLYPHS,
   applyChessMove,
   checkC4Winner,
   checkTttWinner,
+  chessPieceSvg,
   createInitialChessBoard,
   dropC4Piece,
   isKingInCheck,
@@ -552,10 +552,19 @@ export class ActivitiesController {
           (isLast ? " last-move" : "");
         const p = this.chessBoard[sq];
         if (p) {
-          const span = document.createElement("span");
-          span.className = p.c === "w" ? "chess-piece-w" : "chess-piece-b";
-          span.textContent = CHESS_GLYPHS[p.c][p.t];
-          btn.appendChild(span);
+          btn.innerHTML = chessPieceSvg(p);
+        }
+        if (c === 0) {
+          const rankLbl = document.createElement("span");
+          rankLbl.className = "chess-coord chess-coord-rank";
+          rankLbl.textContent = String(8 - r);
+          btn.appendChild(rankLbl);
+        }
+        if (r === 7) {
+          const fileLbl = document.createElement("span");
+          fileLbl.className = "chess-coord chess-coord-file";
+          fileLbl.textContent = "abcdefgh"[c]!;
+          btn.appendChild(fileLbl);
         }
         btn.addEventListener("click", () => this.clickChessSquare(sq));
         grid.appendChild(btn);

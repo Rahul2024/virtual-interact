@@ -1116,6 +1116,7 @@ function addCampfireAndForestWilderness(scene: THREE.Scene, colliders: Colliders
   const logMat = standard("#6e472b");
   for (let i = CINEMA_HALL.seatCount; i < CINEMA_SEATS.length; i++) {
     const s = CINEMA_SEATS[i]!;
+    if (s.row !== 10) continue;
     const log = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 1.4, 8), logMat);
     log.rotation.z = Math.PI / 2;
     log.rotation.y = -s.rot;
