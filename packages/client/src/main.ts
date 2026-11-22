@@ -1278,7 +1278,11 @@ function runSession(
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    const end = (reason: string) => {
+    let ended = false;
+    const cleanup = () => {
+      if (ended) return;
+      ended = true;
+      clearFallbackTimer();
       document.removeEventListener("visibilitychange", onVisibility);
       clearInterval(heartbeat);
       adminPanel.detach();
@@ -1291,8 +1295,12 @@ function runSession(
       ideasPanel.unbind();
       ideaWall.setNear(false);
       controls.exitCinemaSeatView();
-      session = undefined;
+      if (session === s) session = undefined;
       controls.blocked = false;
+    };
+
+    const end = (reason: string) => {
+      cleanup();
       resolve(reason);
     };
 
@@ -1308,7 +1316,7 @@ function runSession(
     };
 
     const triggerSeamlessRejoin = async () => {
-      if (rejoiningInPlace || !session) return;
+      if (rejoiningInPlace || ended) return;
       rejoiningInPlace = true;
       clearFallbackTimer();
       const savedPos: RestoredPlayerState = {
@@ -1328,14 +1336,15 @@ function runSession(
       try {
         await waitForServer(() => {}, 25_000);
         const fresh = await joinHub(options);
-        if (!session) return;
-        end("__SEAMLESS_REJOIN__");
+        if (ended) {
+          void fresh.room.leave().catch(() => {});
+          return;
+        }
+        cleanup();
         const nextPromise = runSession(fresh.room, fresh.callbacks, options, fresh.myId, savedPos);
         hud.addSystem("✅ Connected!");
         const nextReason = await nextPromise;
-        if (nextReason !== "__SEAMLESS_REJOIN__") {
-          resolve(nextReason);
-        }
+        resolve(nextReason);
       } catch {
         rejoiningInPlace = false;
         end("Connection lost. Click Enter to rejoin.");
@@ -1343,18 +1352,20 @@ function runSession(
     };
 
     room.onDrop(() => {
+      if (ended || rejoiningInPlace) return;
       if (!reconnectingNoticed) {
         reconnectingNoticed = true;
         hud.addSystem("⚠️ Connection hiccup — reconnecting…");
       }
       clearFallbackTimer();
       fallbackTimer = setTimeout(() => {
-        if (reconnectingNoticed && !room.connection?.isOpen) {
+        if (!ended && reconnectingNoticed && !room.connection?.isOpen) {
           void triggerSeamlessRejoin();
         }
-      }, 4500);
+      }, 8000);
     });
     room.onReconnect(() => {
+      if (ended) return;
       clearFallbackTimer();
       reconnectingNoticed = false;
       hud.addSystem("✅ Connected!");
@@ -1368,6 +1379,7 @@ function runSession(
       }
     });
     room.onError((code, message) => {
+      if (ended) return;
       console.error("room error", code, message);
       if (code === 524 || message?.includes("failed to reconnect") || message?.includes("already consumed")) {
         void triggerSeamlessRejoin();
@@ -1377,7 +1389,7 @@ function runSession(
     });
     room.onLeave((code) => {
       clearFallbackTimer();
-      if (rejoiningInPlace) return;
+      if (ended || rejoiningInPlace) return;
       if (code !== 1000 && code !== 4000 && code !== CLOSE.kicked && code !== CLOSE.banned && code !== CLOSE.replaced) {
         void triggerSeamlessRejoin();
         return;

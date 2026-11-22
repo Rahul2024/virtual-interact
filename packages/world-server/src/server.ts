@@ -28,8 +28,8 @@ export function createWorldServer() {
     // beforeUpgrade calls checkReconnectionToken so half-open stale sockets are closed immediately on reconnect.
     transport: new WebSocketTransport({
       maxPayload: 64 * 1024,
-      pingInterval: 5_000,
-      pingMaxRetries: 3,
+      pingInterval: 10_000,
+      pingMaxRetries: 5,
       beforeUpgrade(request) {
         try {
           const url = new URL(request.url);
