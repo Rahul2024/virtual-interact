@@ -27,7 +27,7 @@ export const PLAYER = {
 
 export const NET = {
   sendHz: 10,
-  patchMs: 50,
+  patchMs: 100,
   maxMessagesPerSecond: 250,
 } as const;
 

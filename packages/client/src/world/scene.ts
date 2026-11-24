@@ -308,8 +308,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     antialias: !isTouchDevice,
     powerPreference: "high-performance",
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.25 : 1.75));
-  renderer.shadowMap.enabled = true;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.0 : 1.75));
+  renderer.shadowMap.enabled = !isTouchDevice;
   renderer.shadowMap.type = isTouchDevice ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
@@ -319,9 +319,9 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PALETTE.skyDay);
-  scene.fog = new THREE.Fog(PALETTE.skyDay, 75, 235);
+  scene.fog = new THREE.Fog(PALETTE.skyDay, isTouchDevice ? 55 : 75, isTouchDevice ? 175 : 235);
 
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 480);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, isTouchDevice ? 220 : 480);
   camera.position.set(0, 6, 12);
 
   const colliders = new Colliders();
@@ -377,6 +377,10 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
   const animalEntries = new Map<string, AnimalMeshEntry>();
   let lastScoreRed = -1;
   let lastScoreBlue = -1;
+  let lastAtmoMs = -1000;
+  const skyDayColor = new THREE.Color(PALETTE.skyDay);
+  const skySunsetColor = new THREE.Color(PALETTE.skySunset);
+  const skyNightColor = new THREE.Color(PALETTE.skyNight);
   const surfaceSkyColor = new THREE.Color(PALETTE.skyDay);
   const abyssBgColor = new THREE.Color("#06040d");
 
@@ -478,20 +482,27 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
     },
     updateAtmosphere(nowMs: number) {
       const tSec = nowMs / 1000;
-      flameGroup.scale.y = 0.92 + Math.sin(tSec * 11) * 0.12 + Math.cos(tSec * 17) * 0.06;
-      flameGroup.rotation.y = tSec * 1.5;
-      hauntedCastle.update(tSec);
+      const inSouthForestView = camera.position.z > 25 && camera.position.z < 260;
+      if (inSouthForestView) {
+        flameGroup.scale.y = 0.92 + Math.sin(tSec * 11) * 0.12 + Math.cos(tSec * 17) * 0.06;
+        flameGroup.rotation.y = tSec * 1.5;
+        hauntedCastle.update(tSec);
 
-      // Animate forest fireflies & river dragonflies
-      fireflies.position.y = Math.sin(tSec * 1.8) * 0.35;
-      fireflies.rotation.y = Math.sin(tSec * 0.15) * 0.08;
-      dragonflies.forEach((df, i) => {
-        const angle = tSec * 1.9 + i * 1.3;
-        df.position.x = df.userData.homeX + Math.cos(angle) * 3.8;
-        df.position.z = df.userData.homeZ + Math.sin(angle * 1.4) * 2.2;
-        df.position.y = 0.85 + Math.sin(tSec * 6 + i) * 0.22;
-        df.rotation.y = -angle;
-      });
+        // Animate forest fireflies & river dragonflies only when in/near the south forest
+        fireflies.position.y = Math.sin(tSec * 1.8) * 0.35;
+        fireflies.rotation.y = Math.sin(tSec * 0.15) * 0.08;
+        dragonflies.forEach((df, i) => {
+          const angle = tSec * 1.9 + i * 1.3;
+          df.position.x = df.userData.homeX + Math.cos(angle) * 3.8;
+          df.position.z = df.userData.homeZ + Math.sin(angle * 1.4) * 2.2;
+          df.position.y = 0.85 + Math.sin(tSec * 6 + i) * 0.22;
+          df.rotation.y = -angle;
+        });
+      }
+
+      // Throttle sky/fog/lamp/window updates to 4Hz with zero per-frame Color allocations
+      if (nowMs - lastAtmoMs < 250) return;
+      lastAtmoMs = nowMs;
 
       const hour =
         worldObj.timeMode === "ist"
@@ -514,9 +525,9 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
       worldObj.isNight = nightFactor > 0.45;
 
       if (nightFactor <= 0.5) {
-        surfaceSkyColor.lerpColors(new THREE.Color(PALETTE.skyDay), new THREE.Color(PALETTE.skySunset), nightFactor * 2);
+        surfaceSkyColor.lerpColors(skyDayColor, skySunsetColor, nightFactor * 2);
       } else {
-        surfaceSkyColor.lerpColors(new THREE.Color(PALETTE.skySunset), new THREE.Color(PALETTE.skyNight), (nightFactor - 0.5) * 2);
+        surfaceSkyColor.lerpColors(skySunsetColor, skyNightColor, (nightFactor - 0.5) * 2);
       }
 
       const inUndergroundDungeon = isInBrickDungeon(camera.position.x, camera.position.z);
@@ -536,8 +547,8 @@ export function createWorld(container: HTMLElement, labelContainer: HTMLElement)
         scene.background = surfaceSkyColor;
         if (scene.fog instanceof THREE.Fog) {
           scene.fog.color.copy(surfaceSkyColor);
-          scene.fog.near = THREE.MathUtils.lerp(80, 44, nightFactor);
-          scene.fog.far = THREE.MathUtils.lerp(245, 160, nightFactor);
+          scene.fog.near = THREE.MathUtils.lerp(isTouchDevice ? 55 : 80, 44, nightFactor);
+          scene.fog.far = THREE.MathUtils.lerp(isTouchDevice ? 175 : 245, 160, nightFactor);
         }
         sun.intensity = THREE.MathUtils.lerp(2.2, 0.22, nightFactor);
         sun.color.set(nightFactor > 0.3 && nightFactor < 0.8 ? "#ff9e66" : nightFactor >= 0.8 ? "#6b8cff" : "#fff4e0");
@@ -1814,40 +1825,35 @@ function addCinemaHall(scene: THREE.Scene, colliders: Colliders) {
     group.add(aisleRunner);
   }
 
-  // 5. 60 Luxury Cinema Recliner Seats
+  // 5. 60 Luxury Cinema Recliner Seats (batched into 5 InstancedMeshes -> 5 draw calls instead of 420)
   const seatGeo = new THREE.BoxGeometry(0.9, 0.16, 0.78);
   const backGeo = new THREE.BoxGeometry(0.9, 0.82, 0.16);
   const armGeo = new THREE.BoxGeometry(0.12, 0.38, 0.75);
   const cupGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.12, 8);
   const pedestalGeo = new THREE.CylinderGeometry(0.16, 0.24, 0.38, 8);
 
-  for (let i = 0; i < CINEMA_HALL.seatCount; i++) {
+  const seatCount = CINEMA_HALL.seatCount;
+  const pedInst = new THREE.InstancedMesh(pedestalGeo, armMat, seatCount);
+  const cushionInst = new THREE.InstancedMesh(seatGeo, cushionMat, seatCount);
+  const backInst = new THREE.InstancedMesh(backGeo, cushionMat, seatCount);
+  const armInst = new THREE.InstancedMesh(armGeo, armMat, seatCount * 2);
+  const cupInst = new THREE.InstancedMesh(cupGeo, brassGoldMat, seatCount * 2);
+  const chairMat4 = new THREE.Matrix4();
+
+  for (let i = 0; i < seatCount; i++) {
     const s = CINEMA_SEATS[i]!;
     const chairY = s.y ?? 0;
-    const chair = new THREE.Group();
-    chair.position.set(s.x, chairY, s.z);
-
-    const ped = new THREE.Mesh(pedestalGeo, armMat);
-    ped.position.y = 0.19;
-    chair.add(ped);
-
-    const cushion = new THREE.Mesh(seatGeo, cushionMat);
-    cushion.position.y = 0.44;
-    chair.add(cushion);
-
-    const back = new THREE.Mesh(backGeo, cushionMat);
-    back.position.set(0, 0.84, 0.32);
-    chair.add(back);
-
-    for (const ax of [-0.46, 0.46]) {
-      const arm = new THREE.Mesh(armGeo, armMat);
-      arm.position.set(ax, 0.58, 0.04);
-      const cup = new THREE.Mesh(cupGeo, brassGoldMat);
-      cup.position.set(ax, 0.76, -0.25);
-      chair.add(arm, cup);
-    }
-
-    group.add(chair);
+    pedInst.setMatrixAt(i, chairMat4.makeTranslation(s.x, chairY + 0.19, s.z));
+    cushionInst.setMatrixAt(i, chairMat4.makeTranslation(s.x, chairY + 0.44, s.z));
+    backInst.setMatrixAt(i, chairMat4.makeTranslation(s.x, chairY + 0.84, s.z + 0.32));
+    armInst.setMatrixAt(i * 2, chairMat4.makeTranslation(s.x - 0.46, chairY + 0.58, s.z + 0.04));
+    armInst.setMatrixAt(i * 2 + 1, chairMat4.makeTranslation(s.x + 0.46, chairY + 0.58, s.z + 0.04));
+    cupInst.setMatrixAt(i * 2, chairMat4.makeTranslation(s.x - 0.46, chairY + 0.76, s.z - 0.25));
+    cupInst.setMatrixAt(i * 2 + 1, chairMat4.makeTranslation(s.x + 0.46, chairY + 0.76, s.z - 0.25));
+  }
+  for (const inst of [pedInst, cushionInst, backInst, armInst, cupInst]) {
+    inst.instanceMatrix.needsUpdate = true;
+    group.add(inst);
   }
 
   // 6. Colossal Screen, Elevated Stage & Velvet Curtains
@@ -1926,6 +1932,13 @@ function addBuildings(
   const winMat = standard("#28364d", { emissive: "#ffd98a", emissiveIntensity: 0.15, flatShading: false });
   windowMaterials.push(winMat);
 
+  const winGeo = new THREE.PlaneGeometry(1.2, 1.6);
+  const winMatrices: THREE.Matrix4[] = [];
+  const winPos = new THREE.Vector3();
+  const winQuat = new THREE.Quaternion();
+  const winScale = new THREE.Vector3(1, 1, 1);
+  const yAxis = new THREE.Vector3(0, 1, 0);
+
   specs.forEach(([x, z, w, d, h], i) => {
     const color = PALETTE.buildings[i % PALETTE.buildings.length]!;
     const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), standard(color));
@@ -1943,24 +1956,34 @@ function addBuildings(
     const cols = Math.max(2, Math.floor((facing === "x" ? d : w) / 2.5));
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const win = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.6), winMat);
         const along = (c - (cols - 1) / 2) * 2.5;
         const y = 2 + r * 3;
+        let rotY = 0;
         if (facing === "x") {
           const side = x > 0 ? -1 : 1;
-          win.position.set(x + side * (w / 2 + 0.01), y, z + along);
-          win.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+          winPos.set(x + side * (w / 2 + 0.01), y, z + along);
+          rotY = side > 0 ? Math.PI / 2 : -Math.PI / 2;
         } else {
           const side = z > 0 ? -1 : 1;
-          win.position.set(x + along, y, z + side * (d / 2 + 0.01));
-          win.rotation.y = side > 0 ? 0 : Math.PI;
+          winPos.set(x + along, y, z + side * (d / 2 + 0.01));
+          rotY = side > 0 ? 0 : Math.PI;
         }
-        scene.add(win);
+        winQuat.setFromAxisAngle(yAxis, rotY);
+        winMatrices.push(new THREE.Matrix4().compose(winPos, winQuat, winScale));
       }
     }
 
     colliders.boxes.push({ x, z, hw: w / 2, hd: d / 2 });
   });
+
+  if (winMatrices.length > 0) {
+    const winInst = new THREE.InstancedMesh(winGeo, winMat, winMatrices.length);
+    for (let i = 0; i < winMatrices.length; i++) {
+      winInst.setMatrixAt(i, winMatrices[i]!);
+    }
+    winInst.instanceMatrix.needsUpdate = true;
+    scene.add(winInst);
+  }
 }
 
 function addCityAndForestTrees(scene: THREE.Scene, colliders: Colliders) {

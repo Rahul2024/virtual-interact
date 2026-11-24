@@ -241,7 +241,7 @@ export class HubRoom extends Room<{ state: HubState }> {
     this.seedInitialMuralArt();
     this.spawnForestAnimals();
 
-    this.setSimulationInterval((dtMs) => this.tickWorld(dtMs / 1000), 50);
+    this.setSimulationInterval((dtMs) => this.tickWorld(dtMs / 1000), 100);
 
     console.log(`[hub] room ${this.roomId} created`);
   }
@@ -528,6 +528,8 @@ export class HubRoom extends Room<{ state: HubState }> {
         }
       }
 
+      if (brain.vx === 0 && brain.vz === 0) continue;
+
       let nx = animal.x + brain.vx * dt;
       let nz = animal.z + brain.vz * dt;
       if (nx < brain.homeXMin || nx > brain.homeXMax) {
@@ -542,8 +544,8 @@ export class HubRoom extends Room<{ state: HubState }> {
         nz = CAMPFIRE_BASE.z + 14;
         brain.vz = Math.abs(brain.vz);
       }
-      animal.x = nx;
-      animal.z = nz;
+      animal.x = Math.round(nx * 50) / 50;
+      animal.z = Math.round(nz * 50) / 50;
     }
   }
 

@@ -1409,6 +1409,7 @@ const moveVec = new THREE.Vector2();
 const camTarget = new THREE.Vector3();
 let last = performance.now();
 let lastMicLabel = 0;
+let lastHudTick = 0;
 
 function frame(now: number) {
   requestAnimationFrame(frame);
@@ -1434,30 +1435,23 @@ function frame(now: number) {
       );
       controls.updateCamera(world.camera, camTarget);
       maybeSend(session, dt);
-      ideaWall.setNear(ideaWall.isNear(session.me.position));
-      session.voice.update(now);
+      const mx = session.me.position.x;
+      const mz = session.me.position.z;
+      const inCinema = isInCinemaHall(mx, mz) || isCinemaSeated;
+      const inDungeon = isInBrickDungeon(mx, mz);
+      const st = session.room.state;
 
-      pokerPanel.render();
-      adminPanel.render();
-      const serverTime = session.room.state?.timeMode;
+      const serverTime = st?.timeMode;
       if (serverTime && serverTime !== "auto" && world.timeMode !== serverTime) world.timeMode = serverTime as typeof world.timeMode;
-      if (pokerPanel.turnJustStarted()) pokerAudio.yourTurn();
-      const pokerSnap = pokerSnapshot();
-      if (pokerSnap) world.pokerTable.update(pokerSnap);
-      world.pokerTable.tick(dt, pokerPanel.peeking);
 
-      // Which mimic chests (1..3) have someone in their jaws right now, as a bitmask.
-      let chompingChests = 0;
-      let anyPeerMimicTrapped = false;
-      if (session.me.mimicTrapped > 0) chompingChests |= 1 << (session.me.mimicTrapped - 1);
-      for (const r of session.remotes.values()) {
-        if (r.avatar.mimicTrapped > 0) {
-          anyPeerMimicTrapped = true;
-          chompingChests |= 1 << (r.avatar.mimicTrapped - 1);
-        }
+      if (pokerPanel.currentRoom) {
+        pokerPanel.render();
+        if (pokerPanel.turnJustStarted()) pokerAudio.yourTurn();
+        const pokerSnap = pokerSnapshot();
+        if (pokerSnap) world.pokerTable.update(pokerSnap);
+        world.pokerTable.tick(dt, pokerPanel.peeking);
       }
 
-      const st = session.room.state;
       if (st && Number.isFinite(st.ballX) && Number.isFinite(st.ballZ)) {
         world.setFootballState(
           st.ballX,
@@ -1466,7 +1460,17 @@ function frame(now: number) {
           st.scoreBlue ?? 0,
         );
       }
-      if (st) {
+
+      let anyPeerMimicTrapped = false;
+      if (inDungeon && st) {
+        let chompingChests = 0;
+        if (session.me.mimicTrapped > 0) chompingChests |= 1 << (session.me.mimicTrapped - 1);
+        for (const r of session.remotes.values()) {
+          if (r.avatar.mimicTrapped > 0) {
+            anyPeerMimicTrapped = true;
+            chompingChests |= 1 << (r.avatar.mimicTrapped - 1);
+          }
+        }
         world.dungeonColliders.dynamic = dungeonClosedDoors({
           dungeonWing: st.dungeonWing ?? 1,
           grimoireFound: st.grimoireFound ?? 0,
@@ -1488,13 +1492,11 @@ function frame(now: number) {
           nowMs: wallNowMs,
         });
       }
-      let bossHp = 30;
-      const soundAnimals: AnimalSoundState[] = [];
-      if (st?.animals && typeof st.animals.values === "function") {
+
+      if (!inCinema && (inDungeon || mz > 30) && st?.animals && typeof st.animals.values === "function") {
         const animalsList: AnimalRenderState[] = [];
         for (const a of st.animals.values()) {
           if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.z)) continue;
-          if (a.id === "boss-cerberus") bossHp = a.hp ?? 0;
           animalsList.push({
             id: a.id,
             species: a.species,
@@ -1504,114 +1506,130 @@ function frame(now: number) {
             hp: a.hp ?? 1,
             maxHp: a.maxHp ?? 1,
           });
-          soundAnimals.push({
-            id: a.id,
-            species: a.species,
-            x: a.x,
-            z: a.z,
-            hp: a.hp ?? 0,
-            maxHp: a.maxHp ?? 1,
-          });
         }
         world.syncAnimals(animalsList);
       }
 
-      const mx = session.me.position.x;
-      const mz = session.me.position.z;
-      const inCinema = isInCinemaHall(mx, mz) || isCinemaSeated;
+      // Throttle HUD, voice spatialization, peer list, context bar & ambient audio to 10Hz
+      if (now - lastHudTick >= 100) {
+        lastHudTick = now;
+        ideaWall.setNear(ideaWall.isNear(session.me.position));
+        session.voice.update(now);
+        adminPanel.render();
 
-      const peerList: CinemaFriendPeer[] = [];
-      let closestStranger: { sessionId: string; name: string; dist: number } | undefined;
+        const peerList: CinemaFriendPeer[] = [];
+        let closestStranger: { sessionId: string; name: string; dist: number } | undefined;
 
-      for (const [sid, r] of session.remotes.entries()) {
-        const isFriend = session.friends.has(r.clientId);
-        const name = roomPlayerName(session, sid);
-        const distance = Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz);
-        peerList.push({
-          sessionId: sid,
-          clientId: r.clientId,
-          name,
-          color: r.color,
-          isFriend,
-          inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < CINEMA_HALL.seatCount),
-          seatId: r.avatar.seatId,
-          speaking: r.speaking,
-          distance,
-        });
-        if (!isFriend && distance <= 12.0 && (!closestStranger || distance < closestStranger.dist)) {
-          closestStranger = { sessionId: sid, name, dist: distance };
+        for (const [sid, r] of session.remotes.entries()) {
+          const isFriend = session.friends.has(r.clientId);
+          const name = roomPlayerName(session, sid);
+          const distance = Math.hypot(r.avatar.position.x - mx, r.avatar.position.z - mz);
+          peerList.push({
+            sessionId: sid,
+            clientId: r.clientId,
+            name,
+            color: r.color,
+            isFriend,
+            inCinema: isInCinemaHall(r.avatar.position.x, r.avatar.position.z) || (r.avatar.seatId >= 0 && r.avatar.seatId < CINEMA_HALL.seatCount),
+            seatId: r.avatar.seatId,
+            speaking: r.speaking,
+            distance,
+          });
+          if (!isFriend && distance <= 12.0 && (!closestStranger || distance < closestStranger.dist)) {
+            closestStranger = { sessionId: sid, name, dist: distance };
+          }
         }
+
+        cinema.updateHudState({
+          playerX: mx,
+          playerZ: mz,
+          inCinema,
+          isSeated: isCinemaSeated,
+          friendSpeaking: session.voice.isAnyPeerSpeaking,
+          friendsCount: peerList.filter((p) => p.isFriend).length,
+          peers: peerList,
+        });
+
+        let bossHp = 30;
+        const soundAnimals: AnimalSoundState[] = [];
+        if (!inCinema && (inDungeon || mz > 30) && st?.animals && typeof st.animals.values === "function") {
+          for (const a of st.animals.values()) {
+            if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.z)) continue;
+            if (a.id === "boss-cerberus") bossHp = a.hp ?? 0;
+            soundAnimals.push({
+              id: a.id,
+              species: a.species,
+              x: a.x,
+              z: a.z,
+              hp: a.hp ?? 0,
+              maxHp: a.maxHp ?? 1,
+            });
+          }
+        }
+
+        activities.updateContextBar({
+          tool: session.me.tool,
+          team: session.me.team,
+          rawMeat: session.rawMeat,
+          cookedMeat: session.cookedMeat,
+          energy: session.energy,
+          isSeated,
+          onOpenMic: isOnOpenMicStage(mx, mz),
+          nearMural: isNearGraffitiMural(mx, mz),
+          inFootball: isInFootballStadium(mx, mz),
+          inArcade: isInArcadeZone(mx, mz),
+          inCampfire: isInCampfireCircle(mx, mz),
+          inForest: isInForestWilderness(mx, mz),
+          inDungeon,
+          playerX: mx,
+          playerZ: mz,
+          dungeonWing: st?.dungeonWing ?? 1,
+          grimoireFound: st?.grimoireFound ?? 0,
+          websBurned: st?.websBurned ?? 0,
+          bossHp,
+          mimicTrapped: session.me.mimicTrapped,
+          anyPeerMimicTrapped,
+          isNight: world.isNight,
+          nearbyStranger: closestStranger ? { sessionId: closestStranger.sessionId, name: closestStranger.name } : undefined,
+        });
+
+        gameAudio.update({
+          playerX: mx,
+          playerZ: mz,
+          isNight: world.isNight,
+          timeMode: world.timeMode,
+          inCinema: inCinema || cinema.expanded,
+          moviePlaying: Boolean(st?.movieUrl && st?.moviePaused !== 1),
+          inArcadeModal: activities.isModalOpen,
+          inPoker: pokerSeatIndexOf(session.me.seatId) >= 0 || Boolean(pokerPanel.currentRoom),
+          animals: soundAnimals,
+        });
       }
-
-      cinema.updateHudState({
-        playerX: mx,
-        playerZ: mz,
-        inCinema,
-        isSeated: isCinemaSeated,
-        friendSpeaking: session.voice.isAnyPeerSpeaking,
-        friendsCount: peerList.filter((p) => p.isFriend).length,
-        peers: peerList,
-      });
-
-      activities.updateContextBar({
-        tool: session.me.tool,
-        team: session.me.team,
-        rawMeat: session.rawMeat,
-        cookedMeat: session.cookedMeat,
-        energy: session.energy,
-        isSeated,
-        onOpenMic: isOnOpenMicStage(mx, mz),
-        nearMural: isNearGraffitiMural(mx, mz),
-        inFootball: isInFootballStadium(mx, mz),
-        inArcade: isInArcadeZone(mx, mz),
-        inCampfire: isInCampfireCircle(mx, mz),
-        inForest: isInForestWilderness(mx, mz),
-        inDungeon: isInBrickDungeon(mx, mz),
-        playerX: mx,
-        playerZ: mz,
-        dungeonWing: st?.dungeonWing ?? 1,
-        grimoireFound: st?.grimoireFound ?? 0,
-        websBurned: st?.websBurned ?? 0,
-        bossHp,
-        mimicTrapped: session.me.mimicTrapped,
-        anyPeerMimicTrapped,
-        isNight: world.isNight,
-        nearbyStranger: closestStranger ? { sessionId: closestStranger.sessionId, name: closestStranger.name } : undefined,
-      });
 
       if (session.voice.status === "on" && now - lastMicLabel > 600) {
         lastMicLabel = now;
         activities.updateTimeButtonLabel();
         hud.setMic("on", session.voice.listeners);
       }
-
-      gameAudio.update({
-        playerX: mx,
-        playerZ: mz,
-        isNight: world.isNight,
-        timeMode: world.timeMode,
-        inCinema: inCinema || cinema.expanded,
-        moviePlaying: Boolean(st?.movieUrl && st?.moviePaused !== 1),
-        inArcadeModal: activities.isModalOpen,
-        inPoker: pokerSeatIndexOf(session.me.seatId) >= 0 || Boolean(pokerPanel.currentRoom),
-        animals: soundAnimals,
-      });
     } else {
       controls.yaw += dt * 0.08;
       controls.pitch = 0.4;
       controls.distance = 22;
       camTarget.set(0, 2.5, 0);
       controls.updateCamera(world.camera, camTarget);
-      gameAudio.update({
-        playerX: 0,
-        playerZ: 0,
-        isNight: world.isNight,
-        timeMode: world.timeMode,
-        inCinema: false,
-        moviePlaying: false,
-        inArcadeModal: false,
-        animals: [],
-      });
+      if (now - lastHudTick >= 100) {
+        lastHudTick = now;
+        gameAudio.update({
+          playerX: 0,
+          playerZ: 0,
+          isNight: world.isNight,
+          timeMode: world.timeMode,
+          inCinema: false,
+          moviePlaying: false,
+          inArcadeModal: false,
+          animals: [],
+        });
+      }
     }
 
     world.render();
